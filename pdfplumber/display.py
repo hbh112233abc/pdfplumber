@@ -51,14 +51,34 @@ def get_page_image(stream: BufferedReader, page_no: int, resolution: int) -> Wan
         def postprocess(img: WandImage) -> WandImage:
             return WandImage(image=img.sequence[page_no])
 
-    with WandImage(resolution=resolution, filename=filename, file=file) as img_init:
+    with WandImage(
+        resolution=resolution,
+        filename=filename,
+        file=file,
+        colorspace="rgb",
+        format="pdf",
+    ) as img_init:
         img = postprocess(img_init)
-        if img.alpha_channel:
-            img.background_color = WandColor("white")
-            img.alpha_channel = "remove"
-        with img.convert("png") as png:
-            im = PIL.Image.open(BytesIO(png.make_blob()))
-            return im.convert("RGB")
+        with WandImage(
+            width=img.width,
+            height=img.height,
+            background=WandColor("white"),
+            colorspace="rgb",
+        ) as bg:
+            bg.composite(img, 0, 0)
+            try:
+                im = PIL.Image.open(BytesIO(bg.make_blob("png")))
+            except PIL.Image.DecompressionBombError:
+                raise PIL.Image.DecompressionBombError(
+                    "Image conversion raised a DecompressionBombError. "
+                    "PIL.Image.MAX_IMAGE_PIXELS is currently set to "
+                    f"{PIL.Image.MAX_IMAGE_PIXELS}. "
+                    "If you trust this PDF, you can try setting "
+                    "PIL.Image.MAX_IMAGE_PIXELS to a higher value. "
+                    "See https://github.com/jsvine/pdfplumber/issues/413"
+                    "#issuecomment-1190650404 for more information."
+                )
+        return im.convert("RGB")
 
 
 class PageImage:

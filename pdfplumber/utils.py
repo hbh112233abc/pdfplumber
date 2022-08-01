@@ -1,5 +1,6 @@
 import itertools
 import re
+import string
 from collections.abc import Sequence
 from operator import itemgetter
 from typing import (
@@ -245,6 +246,7 @@ class WordExtractor:
         horizontal_ltr: bool = True,  # Should words be read left-to-right?
         vertical_ttb: bool = True,  # Should vertical words be read top-to-bottom?
         extra_attrs: Optional[List[str]] = None,
+        split_at_punctuation: Union[bool, str] = False,
     ):
         self.x_tolerance = x_tolerance
         self.y_tolerance = y_tolerance
@@ -253,6 +255,13 @@ class WordExtractor:
         self.horizontal_ltr = horizontal_ltr
         self.vertical_ttb = vertical_ttb
         self.extra_attrs = [] if extra_attrs is None else extra_attrs
+
+        # Note: string.punctuation = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
+        self.split_at_punctuation = (
+            string.punctuation
+            if split_at_punctuation is True
+            else (split_at_punctuation or "")
+        )
 
     def merge_chars(self, ordered_chars: T_obj_list) -> T_obj:
         x0, top, x1, bottom = objects_to_bbox(ordered_chars)
@@ -303,21 +312,34 @@ class WordExtractor:
         current_word: T_obj_list = []
         current_bbox: Optional[T_bbox] = None
 
+        def start_next_word(
+            new_char: Optional[T_obj],
+        ) -> Generator[T_obj_list, None, None]:
+            nonlocal current_word
+            nonlocal current_bbox
+
+            if current_word:
+                yield current_word
+
+            current_word = [] if new_char is None else [new_char]
+            current_bbox = None if new_char is None else obj_to_bbox(new_char)
+
         for char in chars:
-            if not self.keep_blank_chars and char["text"].isspace():
-                if current_word:
-                    yield current_word
-                    current_word = []
-                    current_bbox = None
+            text = char["text"]
+
+            if not self.keep_blank_chars and text.isspace():
+                yield from start_next_word(None)
+
+            elif text in self.split_at_punctuation:
+                yield from start_next_word(char)
+                yield from start_next_word(None)
 
             elif (
                 current_word
                 and current_bbox
                 and self.char_begins_new_word(current_word, current_bbox, char)
             ):
-                yield current_word
-                current_word = [char]
-                current_bbox = obj_to_bbox(char)
+                yield from start_next_word(char)
 
             else:
                 current_word.append(char)
@@ -326,6 +348,7 @@ class WordExtractor:
                 else:
                     current_bbox = merge_bboxes([current_bbox, obj_to_bbox(char)])
 
+        # Finally, after all chars processed
         if current_word:
             yield current_word
 
@@ -450,7 +473,8 @@ class LayoutEngine:
                 num_spaces_prepend = max(min(1, line_len), round(x_dist) - line_len)
                 rendered += [(" ", None)] * num_spaces_prepend
                 for c in chars:
-                    rendered.append((c["text"], c))
+                    for letter in c["text"]:
+                        rendered.append((letter, c))
                 line_len += num_spaces_prepend + len(word["text"])
         return rendered
 
@@ -464,6 +488,7 @@ def extract_words(
     horizontal_ltr: bool = True,  # Should words be read left-to-right?
     vertical_ttb: bool = True,  # Should vertical words be read top-to-bottom?
     extra_attrs: Optional[List[str]] = None,
+    split_at_punctuation: Union[bool, str] = False,
 ) -> T_obj_list:
     return WordExtractor(
         x_tolerance=x_tolerance,
@@ -473,6 +498,7 @@ def extract_words(
         horizontal_ltr=horizontal_ltr,
         vertical_ttb=vertical_ttb,
         extra_attrs=extra_attrs,
+        split_at_punctuation=split_at_punctuation,
     ).extract(chars)
 
 
@@ -554,6 +580,7 @@ def chars_to_layout(
     horizontal_ltr: bool = True,  # Should words be read left-to-right?
     vertical_ttb: bool = True,  # Should vertical words be read top-to-bottom?
     extra_attrs: Optional[List[str]] = None,
+    split_at_punctuation: Union[bool, str] = False,
 ) -> TextLayout:
     extractor = WordExtractor(
         x_tolerance=x_tolerance,
@@ -563,6 +590,7 @@ def chars_to_layout(
         horizontal_ltr=horizontal_ltr,
         vertical_ttb=vertical_ttb,
         extra_attrs=extra_attrs,
+        split_at_punctuation=split_at_punctuation,
     )
 
     engine = LayoutEngine(
@@ -591,6 +619,7 @@ def extract_text(
     horizontal_ltr: bool = True,  # Should words be read left-to-right?
     vertical_ttb: bool = True,  # Should vertical words be read top-to-bottom?
     extra_attrs: Optional[List[str]] = None,
+    split_at_punctuation: Union[bool, str] = False,
 ) -> str:
     chars = to_list(chars)
     if len(chars) == 0:
@@ -606,6 +635,7 @@ def extract_text(
             horizontal_ltr=horizontal_ltr,
             vertical_ttb=vertical_ttb,
             extra_attrs=extra_attrs,
+            split_at_punctuation=split_at_punctuation,
             x_density=x_density,
             y_density=y_density,
             x_shift=x_shift,
@@ -686,6 +716,13 @@ def within_bbox(objs: T_obj_list, bbox: T_bbox) -> T_obj_list:
         for obj in objs
         if get_bbox_overlap(obj_to_bbox(obj), bbox) == obj_to_bbox(obj)
     ]
+
+
+def outside_bbox(objs: T_obj_list, bbox: T_bbox) -> T_obj_list:
+    """
+    Filters objs to only those fully outside the bbox
+    """
+    return [obj for obj in objs if get_bbox_overlap(obj_to_bbox(obj), bbox) is None]
 
 
 def crop_to_bbox(objs: T_obj_list, bbox: T_bbox) -> T_obj_list:

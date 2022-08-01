@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [0.7.4] - 2022-07-19
+
+### Added
+
+- Add `utils.outside_bbox(...)` and `Page.outside_bbox(...)` method, which are the inverse of `utils.within_bbox(...)` and `Page.within_bbox(...)`. ([#369](https://github.com/jsvine/pdfplumber/issues/369) + [3ab1cc4](https://github.com/jsvine/pdfplumber/commit/3ab1cc4))
+- Add `strict=True/False` parameter to `Page.crop(...)`, `Page.within_bbox(...)`, and `Page.outside_bbox(...)`; default is `True`, while `False` bypasses the `test_proposed_bbox(...)` check. ([#421](https://github.com/jsvine/pdfplumber/issues/421) + [71ad60f](https://github.com/jsvine/pdfplumber/commit/71ad60f))
+- Add more guidance to exception when `.to_image(...)` raises `PIL.Image.DecompressionBombError`. ([#413](https://github.com/jsvine/pdfplumber/issues/413) + [b6ff9e8](https://github.com/jsvine/pdfplumber/commit/b6ff9e8))
+
+### Fixed
+
+- Fix `PageImage` conversions for PDFs with `cmyk` colorspaces; convert them to `rgb` earlier in the process. ([28330da](https://github.com/jsvine/pdfplumber/commit/28330da))
+
+## [0.7.3] - 2022-07-18
+
+### Fixed
+
+- Quick fix for transparency issue in visual debugging mode. ([b98dd7c](https://github.com/jsvine/pdfplumber/commit/b98dd7c))
+
+## [0.7.2] - 2022-07-17
+
+### Added
+
+- Add `split_at_punctuation` parameter to `.extract_words(...)` and `.extract_text(...)`. ([#682](https://github.com/jsvine/pdfplumber/issues/674)) [h/t @lolipopshock]
+- Add README.md link to @hbh112233abc's [Chinese translation of README.md](https://github.com/hbh112233abc/pdfplumber/blob/stable/README-CN.md). ([#674](https://github.com/jsvine/pdfplumber/issues/674))
+
+### Changed
+
+- Change `.to_image(...)`'s approach, preferring to composite with a white background instead of removing the alpha channel. ([1cd1f9a](https://github.com/jsvine/pdfplumber/commit/1cd1f9a))
+
+### Fixed
+
+- Fix bug in `LayoutEngine.calculate(...)` when processing char objects with len>1 representations, such as ligatures. ([#683](https://github.com/jsvine/pdfplumber/issues/683))
+
 ## [0.7.1] - 2022-05-31
 
 ### Fixed
@@ -29,6 +62,7 @@ All notable changes to this project will be documented in this file. The format 
 ### Removed
 
 - Remove `utils.collate_chars(...)`, the old name (and then alias) for `utils.extract_text(...)`. ([24f3532](https://github.com/jsvine/pdfplumber/commit/24f3532))
+- Remove `utils._itemgetter(...)`, an internal-use method previously used by `utils.cluster_objects(...)`. ([58b1ab1](https://github.com/jsvine/pdfplumber/commit/58b1ab1))
 
 ### Fixed
 
