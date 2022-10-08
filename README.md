@@ -252,7 +252,7 @@ To turn any page (including cropped pages) into an `PageImage` object, call `my_
 im = my_pdf.pages[0].to_image(resolution=150)
 ```
 
-`PageImage` objects play nicely with IPython/Jupyter notebooks; they automatically render as cell outputs. For example:
+From a script or REPL, `im.show()` will open the image in your local image viewer. But `PageImage` objects also play nicely with IPython/Jupyter notebooks; they automatically render as cell outputs. For example:
 
 ![Visual debugging in Jupyter](examples/screenshots/visual-debugging-in-jupyter.png "Visual debugging in Jupyter")
 
@@ -263,6 +263,7 @@ im = my_pdf.pages[0].to_image(resolution=150)
 |--------|-------------|
 |`im.reset()`| Clears anything you've drawn so far.|
 |`im.copy()`| Copies the image to a new `PageImage` object.|
+|`im.show()`| Opens the image in your local image viewer.|
 |`im.save(path_or_fileobject, format="PNG")`| Saves the annotated image.|
 
 ### Drawing methods
@@ -437,11 +438,12 @@ It's also helpful to know what features `pdfplumber` does __not__ provide:
 
 - [`pdfminer.six`](https://github.com/pdfminer/pdfminer.six) provides the foundation for `pdfplumber`. It primarily focuses on parsing PDFs, analyzing PDF layouts and object positioning, and extracting text. It does not provide tools for table extraction or visual debugging.
 
+- [`PyPDF2`](https://github.com/mstamy2/PyPDF2) is a pure-Python library "capable of splitting, merging, cropping, and transforming the pages of PDF files. It can also add custom data, viewing options, and passwords to PDF files." It can extract page text, but does not provide easy access to shape objects (rectangles, lines, etc.), table-extraction, or visually debugging tools.
+
 - [`pymupdf`](https://pymupdf.readthedocs.io/) is substantially faster than `pdfminer.six` (and thus also `pdfplumber`) and can generate and modify PDFs, but the library requires installation of non-Python software (MuPDF). It also does not enable easy access to shape objects (rectangles, lines, etc.), and does not provide table-extraction or visual debugging tools.
 
 - [`camelot`](https://github.com/camelot-dev/camelot), [`tabula-py`](https://github.com/chezou/tabula-py), and [`pdftables`](https://github.com/drj11/pdftables) all focus primarily on extracting tables. In some cases, they may be better suited to the particular tables you are trying to extract.
 
-- [`PyPDF2`](https://github.com/mstamy2/PyPDF2) and its successor libraries appear no longer to be maintained.
 
 ## Acknowledgments / Contributors
 
