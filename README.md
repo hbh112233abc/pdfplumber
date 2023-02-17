@@ -252,7 +252,7 @@ To turn any page (including cropped pages) into an `PageImage` object, call `my_
 
 - `resolution`: The desired number pixels per inch. Defaults to 72.
 - `width`: The desired image width in pixels.
-- `height`: The desired image width in pixels.
+- `height`: The desired image height in pixels.
 
 ```python
 im = my_pdf.pages[0].to_image(resolution=150)
