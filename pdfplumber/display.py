@@ -33,7 +33,9 @@ T_color = Union[Tuple[int, int, int], Tuple[int, int, int, int], str]
 T_contains_points = Union[Tuple[T_point, ...], List[T_point], T_obj]
 
 
-def get_page_image(stream: BufferedReader, page_no: int, resolution: int) -> WandImage:
+def get_page_image(
+    stream: Union[BufferedReader, BytesIO], page_no: int, resolution: Union[int, float]
+) -> WandImage:
     # If we are working with a file object saved to disk
     if hasattr(stream, "name"):
         filename = f"{stream.name}[{page_no}]"
@@ -86,7 +88,7 @@ class PageImage:
         self,
         page: "Page",
         original: Optional[WandImage] = None,
-        resolution: int = DEFAULT_RESOLUTION,
+        resolution: Union[int, float] = DEFAULT_RESOLUTION,
     ):
         self.page = page
         if original is None:
@@ -147,16 +149,21 @@ class PageImage:
         stroke: T_color = DEFAULT_STROKE,
         stroke_width: int = DEFAULT_STROKE_WIDTH,
     ) -> "PageImage":
+        # If passing a raw list of points, use those
         if isinstance(points_or_obj, (tuple, list)):
             points = points_or_obj
-        elif isinstance(points_or_obj, dict) and "points" in points_or_obj:
-            points = points_or_obj["points"]
+        # Else, use the "pts" attribute if available
+        elif isinstance(points_or_obj, dict) and "pts" in points_or_obj:
+            points = [(x, y) for x, y in points_or_obj["pts"]]
+        # Otherwise, just use ((x0, top), (x1, bottom))
         else:
             obj = points_or_obj
             points = ((obj["x0"], obj["top"]), (obj["x1"], obj["bottom"]))
+
         self.draw.line(
             list(map(self._reproject, points)), fill=stroke, width=stroke_width
         )
+
         return self
 
     def draw_lines(

@@ -18,11 +18,9 @@ from pdfminer.layout import (
     LTChar,
     LTComponent,
     LTContainer,
-    LTCurve,
     LTItem,
-    LTLine,
     LTPage,
-    LTRect,
+    LTTextContainer,
 )
 from pdfminer.pdfinterp import PDFPageInterpreter
 from pdfminer.pdfpage import PDFPage
@@ -32,6 +30,7 @@ from ._typing import T_bbox, T_num, T_obj, T_obj_list
 from .container import Container
 from .table import T_table_settings, Table, TableFinder, TableSettings
 from .utils import resolve_all
+from .utils.text import TextMap
 
 lt_pat = re.compile(r"^LT")
 
@@ -89,7 +88,7 @@ class Page(Container):
         self.root_page = self
         self.page_obj = page_obj
         self.page_number = page_number
-        _rotation = resolve_all(self.page_obj.attrs.get("Rotate", 0))
+        _rotation = resolve_all(self.page_obj.attrs.get("Rotate", 0)) or 0
         self.rotation = _rotation % 360
         self.page_obj.rotate = self.rotation
         self.initial_doctop = initial_doctop
@@ -116,6 +115,9 @@ class Page(Container):
                 max(m[1], m[3]),
             )
         )
+
+        # https://rednafi.github.io/reflections/dont-wrap-instance-methods-with-functoolslru_cache-decorator-in-python.html
+        self.get_textmap = lru_cache()(self._get_textmap)
 
     @property
     def width(self) -> T_num:
@@ -192,6 +194,9 @@ class Page(Container):
         self._objects: Dict[str, T_obj_list] = self.parse_objects()
         return self._objects
 
+    def point2coord(self, pt: Tuple[T_num, T_num]) -> Tuple[T_num, T_num]:
+        return (pt[0], self.height - pt[1])
+
     def process_object(self, obj: LTItem) -> T_obj:
         kind = re.sub(lt_pat, "", obj.__class__.__name__).lower()
 
@@ -208,21 +213,18 @@ class Page(Container):
         attr["object_type"] = kind
         attr["page_number"] = self.page_number
 
-        if isinstance(obj, LTChar):
+        if isinstance(obj, (LTChar, LTTextContainer)):
             attr["text"] = obj.get_text()
+
+        if isinstance(obj, LTChar):
             gs = obj.graphicstate
             attr["stroking_color"] = gs.scolor
             attr["non_stroking_color"] = gs.ncolor
 
-        if isinstance(obj, LTCurve) and not isinstance(obj, (LTRect, LTLine)):
+        if "pts" in attr:
+            attr["pts"] = list(map(self.point2coord, attr["pts"]))
 
-            def point2coord(pt: Tuple[T_num, T_num]) -> Tuple[T_num, T_num]:
-                x, y = pt
-                return (x, self.height - y)
-
-            attr["points"] = list(map(point2coord, obj.pts))
-
-        if attr.get("y0") is not None:
+        if "y0" in attr:
             attr["top"] = self.height - attr["y1"]
             attr["bottom"] = self.height - attr["y0"]
             attr["doctop"] = self.initial_doctop + attr["top"]
@@ -271,12 +273,7 @@ class Page(Container):
     ) -> List[List[List[Optional[str]]]]:
         tset = TableSettings.resolve(table_settings)
         tables = self.find_tables(tset)
-
-        extract_kwargs = {
-            k: getattr(tset, "text_" + k) for k in ["x_tolerance", "y_tolerance"]
-        }
-
-        return [table.extract(**extract_kwargs) for table in tables]
+        return [table.extract(**(tset.text_settings or {})) for table in tables]
 
     def extract_table(
         self, table_settings: Optional[T_table_settings] = None
@@ -293,17 +290,16 @@ class Page(Container):
 
         largest = list(sorted(tables, key=sorter))[0]
 
-        extract_kwargs = {
-            k: getattr(tset, "text_" + k) for k in ["x_tolerance", "y_tolerance"]
-        }
+        return largest.extract(**(tset.text_settings or {}))
 
-        return largest.extract(**extract_kwargs)
-
-    @lru_cache()
-    def get_text_layout(self, **kwargs: Any) -> utils.TextLayout:
+    def _get_textmap(self, **kwargs: Any) -> TextMap:
         defaults = dict(x_shift=self.bbox[0], y_shift=self.bbox[1])
+        if "layout_width_chars" not in kwargs:
+            defaults.update({"layout_width": self.width})
+        if "layout_height_chars" not in kwargs:
+            defaults.update({"layout_height": self.height})
         full_kwargs: Dict[str, Any] = {**defaults, **kwargs}
-        return utils.chars_to_layout(self.chars, **full_kwargs)
+        return utils.chars_to_textmap(self.chars, **full_kwargs)
 
     def search(
         self,
@@ -312,16 +308,14 @@ class Page(Container):
         case: bool = True,
         **kwargs: Any,
     ) -> List[Dict[str, Any]]:
-        text_layout = self.get_text_layout(**kwargs)
-        return text_layout.search(pattern, regex=regex, case=case)
+        textmap = self.get_textmap(**kwargs)
+        return textmap.search(pattern, regex=regex, case=case)
 
     def extract_text(self, **kwargs: Any) -> str:
-        if kwargs.get("layout") is True:
-            del kwargs["layout"]
-            text_layout = self.get_text_layout(**kwargs)
-            return text_layout.to_string()
-        else:
-            return utils.extract_text(self.chars, **kwargs)
+        return self.get_textmap(**kwargs).as_string
+
+    def extract_text_simple(self, **kwargs: Any) -> str:
+        return utils.extract_text_simple(self.chars, **kwargs)
 
     def extract_words(self, **kwargs: Any) -> T_obj_list:
         return utils.extract_words(self.chars, **kwargs)
@@ -368,17 +362,31 @@ class Page(Container):
         p._objects["char"] = utils.dedupe_chars(self.chars, **kwargs)
         return p
 
-    def to_image(self, **conversion_kwargs: Any) -> "PageImage":
+    def to_image(
+        self,
+        resolution: Optional[Union[int, float]] = None,
+        width: Optional[Union[int, float]] = None,
+        height: Optional[Union[int, float]] = None,
+    ) -> "PageImage":
         """
-        For conversion_kwargs, see:
-        http://docs.wand-py.org/en/latest/wand/image.html#wand.image.Image
+        You can pass a maximum of 1 of the following:
+        - resolution: The desired number pixels per inch. Defaults to 72.
+        - width: The desired image width in pixels.
+        - height: The desired image width in pixels.
         """
         from .display import DEFAULT_RESOLUTION, PageImage
 
-        kwargs = dict(conversion_kwargs)
-        if "resolution" not in conversion_kwargs:
-            kwargs["resolution"] = DEFAULT_RESOLUTION
-        return PageImage(self, **kwargs)
+        num_specs = sum(x is not None for x in [resolution, width, height])
+        if num_specs > 1:
+            raise ValueError(
+                f"Only one of these arguments can be provided: resolution, width, height. You provided {num_specs}"  # noqa: E501
+            )
+        elif width is not None:
+            resolution = 72 * width / self.width
+        elif height is not None:
+            resolution = 72 * height / self.height
+
+        return PageImage(self, resolution=resolution or DEFAULT_RESOLUTION)
 
     def to_dict(self, object_types: Optional[List[str]] = None) -> Dict[str, Any]:
         if object_types is None:
@@ -413,6 +421,7 @@ class DerivedPage(Page):
         self.page_obj = parent_page.page_obj
         self.page_number = parent_page.page_number
         self.flush_cache(Container.cached_properties)
+        self.get_textmap = lru_cache()(self._get_textmap)
 
 
 def test_proposed_bbox(bbox: T_bbox, parent_bbox: T_bbox) -> None:
