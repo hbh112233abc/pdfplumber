@@ -15,23 +15,15 @@
 ## 目录
 
 *   [安装](#installation)
-
 *   [命令行](#command-line-interface)
-
 *   [Python包](#python-library)
-
 *   [可视化调试](#visual-debugging)
-
+*   [提取文本](#extracting-text)
 *   [提取表格](#extracting-tables)
-
 *   [提取表单域值](#extracting-form-values)
-
 *   [用例演示](#demonstrations)
-
 *   [与其他库比较](#comparison-to-other-libraries)
-
 *   [认可及贡献](#acknowledgments--contributors)
-
 *   [贡献代码](#contributing)
 
 ## 安装
@@ -121,30 +113,24 @@ Invalid metadata values are treated as a warning by default. If that is not inte
 | `.within_bbox(bounding_box, relative=False, strict=True)`                                                                                                        | 类似`.crop`,但仅保留完全落在边界框内的对象。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 |`.outside_bbox(bounding_box, relative=False, strict=True)`| 类似`.crop` 和 `.within_bbox`, 仅保留边界框外部的对象.|
 | `.filter(test_function)`                                                                                                                            | 过滤对象`.objects`,仅提取当过滤函数`test_function(obj)`返回`True`的对象.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `.dedupe_chars(tolerance=1)`                                                                                                                        | 删除重复的字符-与其他字符共享相同的文本、字体名称、大小和位置（在“公差”x/y范围内）-已删除. (参考 [Issue #71](https://github.com/jsvine/pdfplumber/issues/71)了解该机制)                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `.extract_text(x_tolerance=3, y_tolerance=3, layout=False, x_density=7.25, y_density=13, **kwargs)`                                                 | 将页面的所有字符对象整理为单个字符串.`layout=False`: 当字符`x1`(右x坐标)下一个字符`x0`(左x坐标)的公差大于`x_tolerance`时添加空格. 当字符`doctop`(上y坐标)与下一个字符`doctop`(上y坐标) 公差大于 `y_tolerance`时添加换行.设置 `layout=True` (*实验特性*): 尝试模拟页面上的文本结构布局, 使用 `x_density` 和 `y_density` 确定每个“点”的最小字符/换行数，即PDF度量单位.其他传参`**kwargs` 参考`.extract_words(...)`传参.                                                                                                                                                                                                                                                                      |
-| `.extract_words(x_tolerance=3, y_tolerance=3, keep_blank_chars=False, use_text_flow=False, horizontal_ltr=True, vertical_ttb=True, extra_attrs=[], split_at_punctuation=False)`| 返回词块的内容及边框. 如果（“垂直”字符）一个字符的`x1`与下一个字符的`x0`之间的差值小于或等于`x_tolerance` 并且 一个字符的 `doctop`与下一个字符的 `doctop`小于或等于 `y_tolerance`，则单词被视为字符序列.对于非垂直字符，也采用类似的方法，但测量它们之间的垂直距离，而不是水平距离。参数 `horizontal_ltr` 和 `vertical_ttb` 表示阅读顺序为水平由左至右的顺序及垂直由上而下的顺序. 设置 `keep_blank_chars`为 `True`将空格作为单词的一部分而不是分隔符. 设置 `use_text_flow` 为 `True`将使用PDF的基本字符流作为单词排序和分段的指南，而不是按x/y位置对字符进行预排序。 (这模仿了拖动光标如何突出显示PDF中的文本；因此，顺序并不总是符合逻辑的。) 设置`extra_attrs`额外属性列表  (例: `["fontname", "size"]` 将每个单词限制为每个单词共享完全相同值的字符 [字符属性](https://github.com/jsvine/pdfplumber/blob/develop/README.md#char-属性), 查看单词属性字典; 将`split_at_spurtation`设置为`True`将在`string.punctuation`标点处强制中断；或者您也可以通过传递字符串来指定分隔标点符号的列表，例如: <code>split_at_spursion='！“&\'（）*+，.：；<=>？@[\]^\`\{|\}~'</code>|
-| `.search(pattern, regex=True, case=True, **kwargs)`                                                                                                 | *实验特性* 它允许您搜索页面的文本，返回与查询匹配的所有实例的列表。对于每个实例，返回对象都包含匹配的文本、任何正则表达式组匹配项、边界框坐标以及char对象本身 `pattern`可以是已编译的正则表达式、未编译的正则表达式或非正则表达式字符串。如果`regex`为 `False`，则该模式将被视为非regex字符串。如果 `case`为`False`，则以不区分大小写的方式执行搜索。 其他参数 `**kwargs` 参考 `.extract_text(layout=True, ...)`.                                                                                                                                                                                                                                                                                                             |
-| `.extract_tables(table_settings)`                                                                                                                   | 提取页面表格数据. 详情参考 "[Extracting tables](#extracting-tables)".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `.to_image(**conversion_kwargs)`                                                                                                                    | 返回 `PageImage` 实例. 详情参见 "[可视化调试](#visual-debugging)" . 转换参数参见 [here](http://docs.wand-py.org/en/latest/wand/image.html#wand.image.Image).                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `.close()`                                                                                                                                          | 默认`Page` 对象会缓存其布局和对象信息，以避免重新处理。然而，在解析大型PDF时，这些缓存属性可能需要大量内存。可以使用此方法刷新缓存并释放内存 (旧版本 `<= 0.5.25`, 请使用 `.flush_cache()`.)                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+
+更多方法说明请看以下章节:
+
+- [可视化调试](#visual-debugging)
+- [提取文本](#extracting-text)
+- [提取表格](#extracting-tables)
 
 ### 对象
 
 `pdfplumber.PDF` 和 `pdfplumber.Page`实例均提供各种类型的对象, 对象来自 [`pdfminer.six`](https://github.com/pdfminer/pdfminer.six/)PDF解析。以下属性分别返回匹配对象的Python列表：
 
 *   `.chars`, 代表单个文本字符.
-
 *   `.lines`, 代表一条一维线.
-
 *   `.rects`, 代表单个二维矩形.
-
 *   `.curves`, 代表一序列`pdfminer.six`无法识别成线或矩形的连接点,.
-
 *   `.images`, 代表图像.
-
 *   `.annots`, 代表一个PDF批注 (详见第8.4节 [官方PDF规范](https://www.adobe.com/content/dam/acom/en/devnet/acrobat/pdfs/pdf_reference_1-7.pdf))
-
 *   `.hyperlinks`, 代表链接注释 `Link`包含`URI`属性
 
 以上每个对象都是字典形式,其包含以下属性:
@@ -255,15 +241,22 @@ my_char_rotation = my_char_ctm.skew_x
 
 ## 可视化调试
 
+`pdfplumber`的调试工具可以辅助了解PDF文档结构,利用工具可以导出对象信息.
 **备注:** 使用`pdfplumber`的可视化调试工具, 需要先安装以下两个软件:
 
-*   [`ImageMagick`](https://www.imagemagick.org/). [Installation instructions here](http://docs.wand-py.org/en/latest/guide/install.html#install-imagemagick-debian).
+*   [`ImageMagick`](https://www.imagemagick.org/). [安装地址](http://docs.wand-py.org/en/latest/guide/install.html#install-imagemagick-debian).
 
-*   [`ghostscript`](https://www.ghostscript.com). [Installation instructions here](https://www.ghostscript.com/doc/current/Install.htm),或者 `apt install ghostscript` (Ubuntu) / `brew install ghostscript` (Mac).
+*   [`ghostscript`](https://www.ghostscript.com). [安装地址](https://ghostscript.readthedocs.io/en/latest/Install.html),或者使用命令行安装 `apt install ghostscript` (Ubuntu) / `brew install ghostscript` (Mac).
 
 ### 输出页面图像对象 `PageImage`
 
 使用 `my_page.to_image()`获取页面(包括裁剪页面)的图像对象 `PageImage` .设置分辨率`resolution={integer}`, 默认分辨率:72 例:
+
+使用 `my_page.to_image()`获取页面(包括裁剪页面)的图像对象 `PageImage`. 以下参数可以设置:
+
+- `resolution`: 图片分辨率`resolution={integer}`, 默认分辨率:72.
+- `width`: 图片宽度(像素).
+- `height`: 图片高度(像素).
 
 ```python
 im = my_pdf.pages[0].to_image(resolution=150)
@@ -272,6 +265,8 @@ im = my_pdf.pages[0].to_image(resolution=150)
 使用脚本或交互环境时,`im.show()`将使用本地图片浏览器查看图片, `PageImage` 对象也可以很好地与IPython/Jupyter笔记本电脑配合使用；它们会自动渲染为单元格输出。例如：
 
 ![使用Jupyter进行可视化调试](examples/screenshots/visual-debugging-in-jupyter.png "Visual debugging in Jupyter")
+
+*备注*: `.to_image(...)` 原型是 `Page.crop(...)`/`CroppedPage` 实例, 但是其无法使用 `Page.filter(...)`/`FilteredPage` 实例进行改变.
 
 ### `PageImage` 基础方法
 
@@ -311,6 +306,19 @@ im = my_pdf.pages[0].to_image(resolution=150)
 ```
 
 (`policy.xml`[详细说明](https://imagemagick.org/script/security-policy.php).)
+
+## 提取文本
+
+`pdfplumber` 可以从页面提取文本 (包括裁剪的或者衍生的页面). 它也尽量尝试保持文本布局, 尽可能的识别单词的坐标及查询条件. `Page`对象可以使用以下方法进行文本提取:
+
+
+| 方法 | 说明 |
+|--------|-------------|
+|`.extract_words(x_tolerance=3, y_tolerance=3, keep_blank_chars=False, use_text_flow=False, horizontal_ltr=True, vertical_ttb=True, extra_attrs=[], split_at_punctuation=False)`| 返回词块的内容及边框. 如果是直立字符,字符宽度(字宽+水平间距)小于等于`x_tolerance`且字符高度(字高+垂直间距)小于等于 `y_tolerance`的字符序列被视为一个单词.对于非直立字符，也采用类似的方法，但测量它们之间的垂直距离，而不是水平距离。参数 `horizontal_ltr` 和 `vertical_ttb` 表示阅读顺序为水平由左至右的顺序及垂直由上而下的顺序. 设置 `keep_blank_chars`为 `True`将空格作为单词的一部分而不是分隔符. 设置 `use_text_flow` 为 `True`将使用PDF的基本字符流作为单词排序和分段的指南，而不是按x/y位置对字符进行预排序。 (这模仿了拖动光标如何突出显示PDF中的文本；因此，顺序并不总是符合逻辑的。) 设置`extra_attrs`额外属性列表  (例: `["fontname", "size"]` 将每个单词限制为每个单词共享完全相同值的字符 [字符属性](#char-properties), 查看单词属性字典; 将`split_at_spurtation`设置为`True`将在`string.punctuation`标点处强制中断；或者您也可以通过传递字符串来指定分隔标点符号的列表，例如: <code>split_at_punctuation='!"&\'()*+,.:;<=>?@[\]^\`\{\|\}~'</code>  |
+|`.extract_text(x_tolerance=3, y_tolerance=3, layout=False, x_density=7.25, y_density=13, **kwargs)`| 将页面的所有字符对象整理为单个字符.<ul><li><p>`layout=False`: 当字符`x1`(右x坐标)下一个字符`x0`(左x坐标)的公差大于`x_tolerance`时添加空格. 当字符`doctop`(上y坐标)与下一个字符`doctop`(上y坐标) 公差大于 `y_tolerance`时添加换行.</p></li><li><p>设置 `layout=True` (*实验特性*): 尝试模拟页面上的文本结构布局, 使用 `x_density` 和 `y_density` 确定每个“点”的最小字符/换行数，即PDF度量单位.其他传参`**kwargs` 参考`.extract_words(...)`</p></li></ul>|
+|`.extract_text_simple(x_tolerance=3, y_tolerance=3)`| `.extract_text(...)`的加速版,使用了较为简单的判断逻辑,获取的内容可能没那么精确.|
+|`.search(pattern, regex=True, case=True, **kwargs)`|*试验特性* 页面文本查找, 返回匹配的对象实例. 每个实例包含关键词或正则匹配的文本, 边框坐标, 包含的字符. `pattern` 可以是一个正则表达式或普通文本. 如果 `regex`=`False`, `pattern`将被当做普通文本. 如果`case`=`False`, 查找忽略大小写. `**kwargs` 参考 `.extract_text(layout=True, ...)`.|
+|`.dedupe_chars(tolerance=1)`| 删除重复的字符-与其他字符共享相同的文本、字体名称、大小和位置（在“公差”x/y范围内）-已删除. (参考 [Issue #71](https://github.com/jsvine/pdfplumber/issues/71)了解该机制)|
 
 ## 提取表格
 
@@ -387,9 +395,9 @@ page.extract_table()
 | `"edge_min_length"`                                                                    | 在尝试重建表之前，将丢弃小于`edge_min_length`的边                                                       |
 | `"min_words_vertical"`                                                                 | 使用 `"horizontal_strategy": "text"`时，至少 `min_words_horizontal`单词必须共享相同的对齐方式。             |
 | `"min_words_horizontal"`                                                               | 使用 `"horizontal_strategy": "text"`时,至少`min_words_horizontal`单词必须共享相同的对齐方式。              |
-| `"keep_blank_chars"`                                                                   | 使用 `text` 策略时, 空格符`" "`将视为单词的一部分而不是单词分隔符                                                |
-| `"text_tolerance"`, `"text_x_tolerance"`, `"text_y_tolerance"`                         | 当 `text` 策略搜索单词时，期望每个单词中的单个字母之间的距离不超过`text_tolerance`像素。                                |
 | `"intersection_tolerance"`, `"intersection_x_tolerance"`, `"intersection_y_tolerance"` | 将边组合到单元格中时，正交边必须在`intersection_tolerance` 像素范围内才能视为相交。                                  |
+|`"text_*"`| 以`text_`为前缀的配置项将在表格文本提取时生效. 可以设置`Page.extract_text(...)`中的参数.|
+|`"text_x_tolerance"`, `"text_y_tolerance"`| `text_`为前缀的配置项也适用于表格识别算法,也就是说，当该算法搜索单词时，它将期望每个单词中的单个字母之间的距离不超过`text_[x|y]_tlerance`像素.|
 
 ### 表格提取策略
 
@@ -519,6 +527,8 @@ for field in fields:
 *   [Ethan Corey](https://github.com/ethanscorey)
 
 *   [Shannon Shen](https://github.com/lolipopshock)
+
+*   [Matsumoto Toshi](https://github.com/toshi1127)
 
 ## 贡献者
 
