@@ -5,15 +5,25 @@ import string
 from operator import itemgetter
 from typing import Any, Dict, Generator, List, Match, Optional, Pattern, Tuple, Union
 
-from .._typing import T_bbox, T_num, T_obj, T_obj_iter, T_obj_list
+from .._typing import T_num, T_obj, T_obj_iter, T_obj_list
 from .clustering import cluster_objects
 from .generic import to_list
-from .geometry import merge_bboxes, obj_to_bbox, objects_to_bbox
+from .geometry import objects_to_bbox
 
 DEFAULT_X_TOLERANCE = 3
 DEFAULT_Y_TOLERANCE = 3
 DEFAULT_X_DENSITY = 7.25
 DEFAULT_Y_DENSITY = 13
+
+LIGATURES = {
+    "ﬀ": "ff",
+    "ﬃ": "ffi",
+    "ﬄ": "ffl",
+    "ﬁ": "fi",
+    "ﬂ": "fl",
+    "ﬆ": "st",
+    "ﬅ": "st",
+}
 
 
 class TextMap:
@@ -26,22 +36,42 @@ class TextMap:
         self.tuples = tuples
         self.as_string = "".join(map(itemgetter(0), tuples))
 
+    def match_to_dict(
+        self,
+        m: Match[str],
+        main_group: int = 0,
+        return_groups: bool = True,
+        return_chars: bool = True,
+    ) -> Dict[str, Any]:
+        subset = self.tuples[m.start(main_group) : m.end(main_group)]
+        chars = [c for (text, c) in subset if c is not None]
+        x0, top, x1, bottom = objects_to_bbox(chars)
+
+        result = {
+            "text": m.group(main_group),
+            "x0": x0,
+            "top": top,
+            "x1": x1,
+            "bottom": bottom,
+        }
+
+        if return_groups:
+            result["groups"] = m.groups()
+
+        if return_chars:
+            result["chars"] = chars
+
+        return result
+
     def search(
-        self, pattern: Union[str, Pattern[str]], regex: bool = True, case: bool = True
+        self,
+        pattern: Union[str, Pattern[str]],
+        regex: bool = True,
+        case: bool = True,
+        return_groups: bool = True,
+        return_chars: bool = True,
+        main_group: int = 0,
     ) -> List[Dict[str, Any]]:
-        def match_to_dict(m: Match[str]) -> Dict[str, Any]:
-            subset = self.tuples[m.start() : m.end()]
-            chars = [c for (text, c) in subset if c is not None]
-            x0, top, x1, bottom = objects_to_bbox(chars)
-            return {
-                "text": m.group(0),
-                "groups": m.groups(),
-                "x0": x0,
-                "top": top,
-                "x1": x1,
-                "bottom": bottom,
-                "chars": chars,
-            }
 
         if isinstance(pattern, Pattern):
             if regex is False:
@@ -61,7 +91,38 @@ class TextMap:
             compiled = re.compile(pattern, flags)
 
         gen = re.finditer(compiled, self.as_string)
-        return list(map(match_to_dict, gen))
+        # Remove zero-length matches (can happen, e.g., with optional
+        # patterns in regexes) and whitespace-only matches
+        filtered = filter(lambda m: bool(m.group(main_group).strip()), gen)
+        return [
+            self.match_to_dict(
+                m,
+                return_groups=return_groups,
+                return_chars=return_chars,
+                main_group=main_group,
+            )
+            for m in filtered
+        ]
+
+    def extract_text_lines(
+        self, strip: bool = True, return_chars: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        `strip` is analogous to Python's `str.strip()` method, and returns
+        `text` attributes without their surrounding whitespace. Only
+        relevant when the relevant TextMap is created with `layout` = True
+
+        Setting `return_chars` to False will exclude the individual
+        character objects from the returned text-line dicts.
+        """
+        if strip:
+            pat = r" *([^\n]+?) *(\n|$)"
+        else:
+            pat = r"([^\n]+)"
+
+        return self.search(
+            pat, main_group=1, return_chars=return_chars, return_groups=False
+        )
 
 
 class WordMap:
@@ -84,7 +145,9 @@ class WordMap:
         x_shift: T_num = 0,
         y_shift: T_num = 0,
         y_tolerance: T_num = DEFAULT_Y_TOLERANCE,
+        use_text_flow: bool = False,
         presorted: bool = False,
+        expand_ligatures: bool = True,
     ) -> TextMap:
         """
         Given a list of (word, chars) tuples (i.e., a WordMap), return a list of
@@ -126,6 +189,8 @@ class WordMap:
         if not len(self.tuples):
             return TextMap(_textmap)
 
+        expansions = LIGATURES if expand_ligatures else {}
+
         if layout:
             if layout_width_chars:
                 if layout_width:
@@ -149,17 +214,19 @@ class WordMap:
 
         num_newlines = 0
 
-        words_sorted = (
+        words_sorted_doctop = (
             self.tuples
-            if presorted
-            else sorted(self.tuples, key=lambda x: (x[0]["doctop"], x[0]["x0"]))
+            if presorted or use_text_flow
+            else sorted(self.tuples, key=lambda x: float(x[0]["doctop"]))
         )
 
-        first_word = words_sorted[0][0]
+        first_word = words_sorted_doctop[0][0]
         doctop_start = first_word["doctop"] - first_word["top"]
 
         for i, ws in enumerate(
-            cluster_objects(words_sorted, lambda x: float(x[0]["doctop"]), y_tolerance)
+            cluster_objects(
+                words_sorted_doctop, lambda x: float(x[0]["doctop"]), y_tolerance
+            )
         ):
             y_dist = (
                 (ws[0][0]["doctop"] - (doctop_start + y_shift)) / y_density
@@ -181,14 +248,24 @@ class WordMap:
             num_newlines += num_newlines_prepend
 
             line_len = 0
-            for word, chars in sorted(ws, key=lambda x: float(x[0]["x0"])):
+
+            line_words_sorted_x0 = (
+                ws
+                if presorted or use_text_flow
+                else sorted(ws, key=lambda x: float(x[0]["x0"]))
+            )
+
+            for word, chars in line_words_sorted_x0:
                 x_dist = (word["x0"] - x_shift) / x_density if layout else 0
                 num_spaces_prepend = max(min(1, line_len), round(x_dist) - line_len)
                 _textmap += [(" ", None)] * num_spaces_prepend
+                line_len += num_spaces_prepend
+
                 for c in chars:
-                    for letter in c["text"]:
+                    letters = expansions.get(c["text"], c["text"])
+                    for letter in letters:
                         _textmap.append((letter, c))
-                line_len += num_spaces_prepend + len(word["text"])
+                        line_len += 1
 
             # Append spaces at end of line
             if layout:
@@ -220,6 +297,7 @@ class WordExtractor:
         vertical_ttb: bool = True,  # Should vertical words be read top-to-bottom?
         extra_attrs: Optional[List[str]] = None,
         split_at_punctuation: Union[bool, str] = False,
+        expand_ligatures: bool = True,
     ):
         self.x_tolerance = x_tolerance
         self.y_tolerance = y_tolerance
@@ -236,6 +314,8 @@ class WordExtractor:
             else (split_at_punctuation or "")
         )
 
+        self.expansions = LIGATURES if expand_ligatures else {}
+
     def merge_chars(self, ordered_chars: T_obj_list) -> T_obj:
         x0, top, x1, bottom = objects_to_bbox(ordered_chars)
         doctop_adj = ordered_chars[0]["doctop"] - ordered_chars[0]["top"]
@@ -244,7 +324,9 @@ class WordExtractor:
         direction = 1 if (self.horizontal_ltr if upright else self.vertical_ttb) else -1
 
         word = {
-            "text": "".join(map(itemgetter("text"), ordered_chars)),
+            "text": "".join(
+                self.expansions.get(c["text"], c["text"]) for c in ordered_chars
+            ),
             "x0": x0,
             "x1": x1,
             "top": top,
@@ -261,43 +343,95 @@ class WordExtractor:
 
     def char_begins_new_word(
         self,
-        current_chars: T_obj_list,
-        current_bbox: T_bbox,
-        next_char: T_obj,
+        prev_char: T_obj,
+        curr_char: T_obj,
     ) -> bool:
+        """This method takes several factors into account to determine if
+        `curr_char` represents the beginning of a new word:
 
-        upright = current_chars[0]["upright"]
-        intraline_tol = self.x_tolerance if upright else self.y_tolerance
-        interline_tol = self.y_tolerance if upright else self.x_tolerance
+        - Whether the text is "upright" (i.e., non-rotated)
+        - Whether the user has specified that horizontal text runs
+          left-to-right (default) or right-to-left, as represented by
+          self.horizontal_ltr
+        - Whether the user has specified that vertical text the text runs
+          top-to-bottom (default) or bottom-to-top, as represented by
+          self.vertical_ttb
+        - The x0, top, x1, and bottom attributes of prev_char and
+          curr_char
+        - The self.x_tolerance and self.y_tolerance settings. Note: In
+          this case, x/y refer to those directions for non-rotated text.
+          For vertical text, they are flipped. A more accurate terminology
+          might be "*intra*line character distance tolerance" and
+          "*inter*line character distance tolerance"
 
-        word_x0, word_top, word_x1, word_bottom = current_bbox
+        An important note: The *intra*line distance is measured from the
+        *end* of the previous character to the *beginning* of the current
+        character, while the *inter*line distance is measured from the
+        *top* of the previous character to the *top* of the next
+        character. The reasons for this are partly repository-historical,
+        and partly logical, as successive text lines' bounding boxes often
+        overlap slightly (and we don't want that overlap to be interpreted
+        as the two lines being the same line).
+
+        The upright-ness of the character determines the attributes to
+        compare, while horizontal_ltr/vertical_ttb determine the direction
+        of the comparison.
+        """
+
+        # Note: Due to the grouping step earlier in the process,
+        # curr_char["upright"] will always equal prev_char["upright"].
+        if curr_char["upright"]:
+            x = self.x_tolerance
+            y = self.y_tolerance
+            ay = prev_char["top"]
+            cy = curr_char["top"]
+            if self.horizontal_ltr:
+                ax = prev_char["x0"]
+                bx = prev_char["x1"]
+                cx = curr_char["x0"]
+            else:
+                ax = -prev_char["x1"]
+                bx = -prev_char["x0"]
+                cx = -curr_char["x1"]
+
+        else:
+            x = self.y_tolerance
+            y = self.x_tolerance
+            ay = prev_char["x0"]
+            cy = curr_char["x0"]
+            if self.vertical_ttb:
+                ax = prev_char["top"]
+                bx = prev_char["bottom"]
+                cx = curr_char["top"]
+            else:
+                ax = -prev_char["bottom"]
+                bx = -prev_char["top"]
+                cx = -curr_char["bottom"]
 
         return bool(
-            (next_char["x0"] > word_x1 + intraline_tol)
-            or (next_char["x1"] < word_x0 - intraline_tol)
-            or (next_char["top"] > word_bottom + interline_tol)
-            or (next_char["bottom"] < word_top - interline_tol)
+            # Intraline test
+            (cx < ax)
+            or (cx > bx + x)
+            # Interline test
+            or (cy > ay + y)
         )
 
     def iter_chars_to_words(
-        self, chars: T_obj_iter
+        self, ordered_chars: T_obj_iter
     ) -> Generator[T_obj_list, None, None]:
         current_word: T_obj_list = []
-        current_bbox: Optional[T_bbox] = None
 
         def start_next_word(
             new_char: Optional[T_obj],
         ) -> Generator[T_obj_list, None, None]:
             nonlocal current_word
-            nonlocal current_bbox
 
             if current_word:
                 yield current_word
 
             current_word = [] if new_char is None else [new_char]
-            current_bbox = None if new_char is None else obj_to_bbox(new_char)
 
-        for char in chars:
+        for char in ordered_chars:
             text = char["text"]
 
             if not self.keep_blank_chars and text.isspace():
@@ -307,19 +441,11 @@ class WordExtractor:
                 yield from start_next_word(char)
                 yield from start_next_word(None)
 
-            elif (
-                current_word
-                and current_bbox
-                and self.char_begins_new_word(current_word, current_bbox, char)
-            ):
+            elif current_word and self.char_begins_new_word(current_word[-1], char):
                 yield from start_next_word(char)
 
             else:
                 current_word.append(char)
-                if current_bbox is None:
-                    current_bbox = obj_to_bbox(char)
-                else:
-                    current_bbox = merge_bboxes([current_bbox, obj_to_bbox(char)])
 
         # Finally, after all chars processed
         if current_word:
@@ -352,13 +478,12 @@ class WordExtractor:
     def iter_extract_tuples(
         self, chars: T_obj_iter
     ) -> Generator[Tuple[T_obj, T_obj_list], None, None]:
-        if not self.use_text_flow:
-            chars = self.iter_sort_chars(chars)
+        ordered_chars = chars if self.use_text_flow else self.iter_sort_chars(chars)
 
         grouping_key = itemgetter("upright", *self.extra_attrs)
-        grouped = itertools.groupby(chars, grouping_key)
+        grouped_chars = itertools.groupby(ordered_chars, grouping_key)
 
-        for keyvals, char_group in grouped:
+        for keyvals, char_group in grouped_chars:
             for word_chars in self.iter_chars_to_words(char_group):
                 yield (self.merge_chars(word_chars), word_chars)
 
@@ -402,7 +527,6 @@ def extract_text(
     if kwargs.get("layout"):
         return chars_to_textmap(chars, **kwargs).as_string
     else:
-        kwargs.update()
         y_tolerance = kwargs.get("y_tolerance", DEFAULT_Y_TOLERANCE)
         extractor = WordExtractor(
             **{k: kwargs[k] for k in WORD_EXTRACTOR_KWARGS if k in kwargs}

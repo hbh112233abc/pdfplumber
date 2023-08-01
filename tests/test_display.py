@@ -3,6 +3,7 @@ import io
 import logging
 import os
 import unittest
+from zipfile import ZipFile
 
 import PIL.Image
 import pytest
@@ -90,14 +91,35 @@ class Test(unittest.TestCase):
     def test__repr_png_(self):
         png = self.im._repr_png_()
         assert isinstance(png, bytes)
-        assert len(png) in (
-            71939,
-            61247,
-        )  # PNG encoder seems to work differently on different setups
+        assert 20000 < len(png) < 80000
+
+    def test_no_quantize(self):
+        b = io.BytesIO()
+        self.im.save(b, "PNG", quantize=False)
+        assert len(b.getvalue()) > len(self.im._repr_png_())
+
+    def test_antialias(self):
+        aa = self.pdf.pages[0].to_image(antialias=True)
+        assert len(aa._repr_png_()) > len(self.im._repr_png_())
 
     def test_decompression_bomb(self):
         original_max = PIL.Image.MAX_IMAGE_PIXELS
         PIL.Image.MAX_IMAGE_PIXELS = 10
-        with pytest.raises(PIL.Image.DecompressionBombError):
-            self.pdf.pages[0].to_image()
+        # Previously, this raised PIL.Image.DecompressionBombError
+        self.pdf.pages[0].to_image()
         PIL.Image.MAX_IMAGE_PIXELS = original_max
+
+    def test_password(self):
+        path = os.path.join(HERE, "pdfs/password-example.pdf")
+        with pdfplumber.open(path, password="test") as pdf:
+            pdf.pages[0].to_image()
+
+    def test_zip(self):
+        # See https://github.com/jsvine/pdfplumber/issues/948
+        # reproducer.py
+        path = os.path.join(HERE, "pdfs/issue-948.zip")
+        with ZipFile(path) as zip_file:
+            with zip_file.open("dummy.pdf") as pdf_file:
+                with pdfplumber.open(pdf_file) as pdf:
+                    page = pdf.pages[0]
+                    page.to_image()

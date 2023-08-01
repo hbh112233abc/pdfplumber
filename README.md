@@ -8,7 +8,7 @@ Plumb a PDF for detailed information about each text character, rectangle, and l
 
 Works best on machine-generated, rather than scanned, PDFs. Built on [`pdfminer.six`](https://github.com/goulu/pdfminer). 
 
-Currently [tested](tests/) on [Python 3.7, 3.8, 3.9, 3.10](.github/workflows/tests.yml).
+Currently [tested](tests/) on [Python 3.8, 3.9, 3.10, 3.11](.github/workflows/tests.yml).
 
 Translations of this document are available in: [Chinese (by @hbh112233abc)](https://github.com/hbh112233abc/pdfplumber/blob/stable/README-CN.md).
 
@@ -94,6 +94,12 @@ The top-level `pdfplumber.PDF` class represents a single PDF and has two main pr
 |`.metadata`| A dictionary of metadata key/value pairs, drawn from the PDF's `Info` trailers. Typically includes "CreationDate," "ModDate," "Producer," et cetera.|
 |`.pages`| A list containing one `pdfplumber.Page` instance per page loaded.|
 
+... and also has the following method:
+
+| Method | Description |
+|--------|-------------|
+|`.close()`| By default, `Page` objects cache their layout and object information to avoid having to reprocess it. When parsing large PDFs, however, these cached properties can require a lot of memory. You can use this method to flush the cache and release the memory. (In version `<= 0.5.25`, use `.flush_cache()`.)|
+
 ### The `pdfplumber.Page` class
 
 The `pdfplumber.Page` class is at the core of `pdfplumber`. Most things you'll do with `pdfplumber` will revolve around this class. It has these main properties:
@@ -113,7 +119,6 @@ The `pdfplumber.Page` class is at the core of `pdfplumber`. Most things you'll d
 |`.within_bbox(bounding_box, relative=False, strict=True)`| Similar to `.crop`, but only retains objects that fall *entirely within* the bounding box.|
 |`.outside_bbox(bounding_box, relative=False, strict=True)`| Similar to `.crop` and `.within_bbox`, but only retains objects that fall *entirely outside* the bounding box.|
 |`.filter(test_function)`| Returns a version of the page with only the `.objects` for which `test_function(obj)` returns `True`.|
-|`.close()`| By default, `Page` objects cache their layout and object information to avoid having to reprocess it. When parsing large PDFs, however, these cached properties can require a lot of memory. You can use this method to flush the cache and release the memory. (In version `<= 0.5.25`, use `.flush_cache()`.)|
 
 Additional methods are described in the sections below:
 
@@ -155,8 +160,11 @@ Each object is represented as a simple Python `dict`, with the following propert
 |`bottom`| Distance of bottom of the character from top of page.|
 |`doctop`| Distance of top of character from top of document.|
 |`matrix`| The "current transformation matrix" for this character. (See below for details.)|
-|`stroking_color`|The color of the character's outline (i.e., stroke), expressed as a tuple or integer, depending on the “color space” used.|
-|`non_stroking_color`|The character's interior color.|
+|`ncs`|TKTK|
+|`stroking_pattern`|TKTK|
+|`non_stroking_pattern`|TKTK|
+|`stroking_color`|The color of the character's outline (i.e., stroke). See [docs/colors.md](docs/colors.md) for details.|
+|`non_stroking_color`|The character's interior color. See [docs/colors.md](docs/colors.md) for details.|
 |`object_type`| "char"|
 
 __Note__: A character’s `matrix` property represents the “current transformation matrix,” as described in Section 4.2.2 of the [PDF Reference](https://ghostscript.com/~robin/pdf_reference17.pdf) (6th Ed.). The matrix controls the character’s scale, skew, and positional translation. Rotation is a combination of scale and skew, but in most cases can be considered equal to the x-axis skew. The `pdfplumber.ctm` submodule defines a class, `CTM`, that assists with these calculations. For instance:
@@ -183,8 +191,8 @@ my_char_rotation = my_char_ctm.skew_x
 |`bottom`| Distance of bottom of the line from top of page.|
 |`doctop`| Distance of top of line from top of document.|
 |`linewidth`| Thickness of line.|
-|`stroking_color`|The color of the line, expressed as a tuple or integer, depending on the “color space” used.|
-|`non_stroking_color`|The non-stroking color specified for the line’s path.|
+|`stroking_color`|The color of the line. See [docs/colors.md](docs/colors.md) for details.|
+|`non_stroking_color`|The non-stroking color specified for the line’s path. See [docs/colors.md](docs/colors.md) for details.|
 |`object_type`| "line"|
 
 #### `rect` properties
@@ -202,8 +210,8 @@ my_char_rotation = my_char_ctm.skew_x
 |`bottom`| Distance of bottom of the rectangle from top of page.|
 |`doctop`| Distance of top of rectangle from top of document.|
 |`linewidth`| Thickness of line.|
-|`stroking_color`|The color of the rectangle's outline, expressed as a tuple or integer, depending on the “color space” used.|
-|`non_stroking_color`|The rectangle’s fill color.|
+|`stroking_color`|The color of the rectangle's outline. See [docs/colors.md](docs/colors.md) for details.|
+|`non_stroking_color`|The rectangle’s fill color. See [docs/colors.md](docs/colors.md) for details.|
 |`object_type`| "rect"|
 
 #### `curve` properties
@@ -211,7 +219,7 @@ my_char_rotation = my_char_ctm.skew_x
 | Property | Description |
 |----------|-------------|
 |`page_number`| Page number on which this curve was found.|
-|`points`| Points — as a list of `(x, top)` tuples — describing the curve.|
+|`pts`| Points — as a list of `(x, top)` tuples — describing the curve.|
 |`height`| Height of curve's bounding box.|
 |`width`| Width of curve's bounding box.|
 |`x0`| Distance of curve's left-most point from left side of page.|
@@ -223,11 +231,13 @@ my_char_rotation = my_char_ctm.skew_x
 |`doctop`| Distance of curve's highest point from top of document.|
 |`linewidth`| Thickness of line.|
 |`fill`| Whether the shape defined by the curve's path is filled.|
-|`stroking_color`|The color of the curve's outline, expressed as a tuple or integer, depending on the “color space” used.|
-|`non_stroking_color`|The curve’s fill color.|
+|`stroking_color`|The color of the curve's outline. See [docs/colors.md](docs/colors.md) for details.|
+|`non_stroking_color`|The curve’s fill color. See [docs/colors.md](docs/colors.md) for details.|
 |`object_type`| "curve"|
 
-Additionally, both `pdfplumber.PDF` and `pdfplumber.Page` provide access to two derived lists of objects: `.rect_edges` (which decomposes each rectangle into its four lines) and `.edges` (which combines `.rect_edges` with `.lines`). 
+#### Derived properties
+
+Additionally, both `pdfplumber.PDF` and `pdfplumber.Page` provide access to several derived lists of objects: `.rect_edges` (which decomposes each rectangle into its four lines), `.curve_edges` (which does the same for `curve` objects), and `.edges` (which combines `.rect_edges`, `.curve_edges`, and `.lines`). 
 
 #### `image` properties
 
@@ -242,25 +252,23 @@ If you pass the `pdfminer.six`-handling `laparams` parameter to `pdfplumber.open
 
 `pdfplumber`'s visual debugging tools can be helpful in understanding the structure of a PDF and the objects that have been extracted from it.
 
-__Note:__ To use this feature, you'll also need to have two additional pieces of software installed on your computer:
-
-- [`ImageMagick`](https://www.imagemagick.org/). [Installation instructions here](http://docs.wand-py.org/en/latest/guide/install.html#install-imagemagick-debian).
-- [`ghostscript`](https://www.ghostscript.com). [Installation instructions here](https://ghostscript.readthedocs.io/en/latest/Install.html), or simply `apt install ghostscript` (Ubuntu) / `brew install ghostscript` (Mac).
-
 
 ### Creating a `PageImage` with `.to_image()`
 
 To turn any page (including cropped pages) into an `PageImage` object, call `my_page.to_image()`. You can optionally pass *one* of the  following keyword arguments:
 
-- `resolution`: The desired number pixels per inch. Defaults to 72.
-- `width`: The desired image width in pixels.
-- `height`: The desired image width in pixels.
+- `resolution`: The desired number pixels per inch. Default: `72`. Type: `int`.
+- `width`: The desired image width in pixels. Default: unset, determined by `resolution`. Type: `int`.
+- `height`: The desired image width in pixels. Default: unset, determined by `resolution`. Type: `int`.
+- `antialias`: Whether to use antialiasing when creating the image. Setting to `True` creates images with less-jagged text and graphics, but with larger file sizes. Default: `False`. Type: `bool`.
+
+For instance:
 
 ```python
 im = my_pdf.pages[0].to_image(resolution=150)
 ```
 
-From a script or REPL, `im.show()` will open the image in your local image viewer. But `PageImage` objects also play nicely with IPython/Jupyter notebooks; they automatically render as cell outputs. For example:
+From a script or REPL, `im.show()` will open the image in your local image viewer. But `PageImage` objects also play nicely with Jupyter notebooks; they automatically render as cell outputs. For example:
 
 ![Visual debugging in Jupyter](examples/screenshots/visual-debugging-in-jupyter.png "Visual debugging in Jupyter")
 
@@ -274,7 +282,7 @@ From a script or REPL, `im.show()` will open the image in your local image viewe
 |`im.reset()`| Clears anything you've drawn so far.|
 |`im.copy()`| Copies the image to a new `PageImage` object.|
 |`im.show()`| Opens the image in your local image viewer.|
-|`im.save(path_or_fileobject, format="PNG")`| Saves the annotated image.|
+|`im.save(path_or_fileobject, format="PNG", quantize=True, colors=256, bits=8)`| Saves the annotated image as a PNG file. The default arguments quantize the image to a palette of 256 colors, saving the PNG with 8-bit color depth. You can disable quantization by passing `quantize=False` or adjust the size of the color palette by passing `colors=N`.|
 
 ### Drawing methods
 
@@ -313,10 +321,11 @@ If you're using `pdfplumber` on a Debian-based system and encounter a `PolicyErr
 
 | Method | Description |
 |--------|-------------|
-|`.extract_words(x_tolerance=3, y_tolerance=3, keep_blank_chars=False, use_text_flow=False, horizontal_ltr=True, vertical_ttb=True, extra_attrs=[], split_at_punctuation=False)`| Returns a list of all word-looking things and their bounding boxes. Words are considered to be sequences of characters where (for "upright" characters) the difference between the `x1` of one character and the `x0` of the next is less than or equal to `x_tolerance` *and* where the `doctop` of one character and the `doctop` of the next is less than or equal to `y_tolerance`. A similar approach is taken for non-upright characters, but instead measuring the vertical, rather than horizontal, distances between them. The parameters `horizontal_ltr` and `vertical_ttb` indicate whether the words should be read from left-to-right (for horizontal words) / top-to-bottom (for vertical words). Changing `keep_blank_chars` to `True` will mean that blank characters are treated as part of a word, not as a space between words. Changing `use_text_flow` to `True` will use the PDF's underlying flow of characters as a guide for ordering and segmenting the words, rather than presorting the characters by x/y position. (This mimics how dragging a cursor highlights text in a PDF; as with that, the order does not always appear to be logical.) Passing a list of `extra_attrs`  (e.g., `["fontname", "size"]` will restrict each words to characters that share exactly the same value for each of those [attributes](#char-properties), and the resulting word dicts will indicate those attributes. Setting `split_at_punctuation` to `True` will enforce breaking tokens at punctuations specified by `string.punctuation`; or you can specify the list of separating punctuation by pass a string, e.g., <code>split_at_punctuation='!"&\'()*+,.:;<=>?@[\]^\`\{\|\}~'</code>.  |
-|`.extract_text(x_tolerance=3, y_tolerance=3, layout=False, x_density=7.25, y_density=13, **kwargs)`| Collates all of the page's character objects into a single string.<ul><li><p>When `layout=False`: Adds spaces where the difference between the `x1` of one character and the `x0` of the next is greater than `x_tolerance`. Adds newline characters where the difference between the `doctop` of one character and the `doctop` of the next is greater than `y_tolerance`.</p></li><li><p>When `layout=True` (*experimental feature*): Attempts to mimic the structural layout of the text on the page(s), using `x_density` and `y_density` to determine the minimum number of characters/newlines per "point," the PDF unit of measurement. All remaining `**kwargs` are passed to `.extract_words(...)` (see above), the first step in calculating the layout.</p></li></ul>|
+|`.extract_text(x_tolerance=3, y_tolerance=3, layout=False, x_density=7.25, y_density=13, **kwargs)`| Collates all of the page's character objects into a single string.<ul><li><p>When `layout=False`: Adds spaces where the difference between the `x1` of one character and the `x0` of the next is greater than `x_tolerance`. Adds newline characters where the difference between the `doctop` of one character and the `doctop` of the next is greater than `y_tolerance`.</p></li><li><p>When `layout=True` (*experimental feature*): Attempts to mimic the structural layout of the text on the page(s), using `x_density` and `y_density` to determine the minimum number of characters/newlines per "point," the PDF unit of measurement. All remaining `**kwargs` are passed to `.extract_words(...)` (see below), the first step in calculating the layout.</p></li></ul>|
 |`.extract_text_simple(x_tolerance=3, y_tolerance=3)`| A slightly faster but less flexible version of `.extract_text(...)`, using a simpler logic.|
-|`.search(pattern, regex=True, case=True, **kwargs)`|*Experimental feature* that allows you to search a page's text, returning a list of all instances that match the query. For each instance, the response dictionary object contains the matching text, any regex group matches, the bounding box coordinates, and the char objects themselves. `pattern` can be a compiled regular expression, an uncompiled regular expression, or a non-regex string. If `regex` is `False`, the pattern is treated as a non-regex string. If `case` is `False`, the search is performed in a case-insensitive manner. The remaining `**kwargs` are those you would pass to `.extract_text(layout=True, ...)`.|
+|`.extract_words(x_tolerance=3, y_tolerance=3, keep_blank_chars=False, use_text_flow=False, horizontal_ltr=True, vertical_ttb=True, extra_attrs=[], split_at_punctuation=False, expand_ligatures=True)`| Returns a list of all word-looking things and their bounding boxes. Words are considered to be sequences of characters where (for "upright" characters) the difference between the `x1` of one character and the `x0` of the next is less than or equal to `x_tolerance` *and* where the `doctop` of one character and the `doctop` of the next is less than or equal to `y_tolerance`. A similar approach is taken for non-upright characters, but instead measuring the vertical, rather than horizontal, distances between them. The parameters `horizontal_ltr` and `vertical_ttb` indicate whether the words should be read from left-to-right (for horizontal words) / top-to-bottom (for vertical words). Changing `keep_blank_chars` to `True` will mean that blank characters are treated as part of a word, not as a space between words. Changing `use_text_flow` to `True` will use the PDF's underlying flow of characters as a guide for ordering and segmenting the words, rather than presorting the characters by x/y position. (This mimics how dragging a cursor highlights text in a PDF; as with that, the order does not always appear to be logical.) Passing a list of `extra_attrs`  (e.g., `["fontname", "size"]` will restrict each words to characters that share exactly the same value for each of those [attributes](#char-properties), and the resulting word dicts will indicate those attributes. Setting `split_at_punctuation` to `True` will enforce breaking tokens at punctuations specified by `string.punctuation`; or you can specify the list of separating punctuation by pass a string, e.g., <code>split_at_punctuation='!"&\'()*+,.:;<=>?@[\]^\`\{\|\}~'</code>. Unless you set `expand_ligatures=False`, ligatures such as `ﬁ` will be expanded into their constituent letters (e.g., `fi`).|
+|`.extract_text_lines(layout=False, strip=True, return_chars=True, **kwargs)`|*Experimental feature* that returns a list of dictionaries representing the lines of text on the page. The `strip` parameter works analogously to Python's `str.strip()` method, and returns `text` attributes without their surrounding whitespace. (Only relevant when `layout = True`.) Setting `return_chars` to `False` will exclude the individual character objects from the returned text-line dicts. The remaining `**kwargs` are those you would pass to `.extract_text(layout=True, ...)`.|
+|`.search(pattern, regex=True, case=True, main_group=0, return_groups=True, return_chars=True, layout=False, **kwargs)`|*Experimental feature* that allows you to search a page's text, returning a list of all instances that match the query. For each instance, the response dictionary object contains the matching text, any regex group matches, the bounding box coordinates, and the char objects themselves. `pattern` can be a compiled regular expression, an uncompiled regular expression, or a non-regex string. If `regex` is `False`, the pattern is treated as a non-regex string. If `case` is `False`, the search is performed in a case-insensitive manner. Setting `main_group` restricts the results to a specific regex group within the `pattern` (default of `0` means the entire match). Setting `return_groups` and/or `return_chars` to `False` will exclude the lists of the matched regex groups and/or characters from being added (as `"groups"` and `"chars"` to the return dicts). The `layout` parameter operates as it does for `.extract_text(...)`. The remaining `**kwargs` are those you would pass to `.extract_text(layout=True, ...)`. __Note__: Zero-width and all-whitespace matches are discarded, because they (generally) have no explicit position on the page. |
 |`.dedupe_chars(tolerance=1)`| Returns a version of the page with duplicate chars — those sharing the same text, fontname, size, and positioning (within `tolerance` x/y) as other characters — removed. (See [Issue #71](https://github.com/jsvine/pdfplumber/issues/71) to understand the motivation.)|
 
 ## Extracting tables
@@ -336,8 +345,9 @@ If you're using `pdfplumber` on a Debian-based system and encounter a `PolicyErr
 | Method | Description |
 |--------|-------------|
 |`.find_tables(table_settings={})`|Returns a list of `Table` objects. The `Table` object provides access to the `.cells`, `.rows`, and `.bbox` properties, as well as the `.extract(x_tolerance=3, y_tolerance=3)` method.|
+|`.find_table(table_settings={})`|Similar to `.find_tables(...)`, but returns the *largest* table on the page, as a `Table` object. If multiple tables have the same size — as measured by the number of cells — this method returns the table closest to the top of the page.|
 |`.extract_tables(table_settings={})`|Returns the text extracted from *all* tables found on the page, represented as a list of lists of lists, with the structure `table -> row -> cell`.|
-|`.extract_table(table_settings={})`|Returns the text extracted from the *largest* table on the page, represented as a list of lists, with the structure `row -> cell`. (If multiple tables have the same size — as measured by the number of cells — this method returns the table closest to the top of the page.)|
+|`.extract_table(table_settings={})`|Returns the text extracted from the *largest* table on the page (see `.find_table(...)` above), represented as a list of lists, with the structure `row -> cell`.|
 |`.debug_tablefinder(table_settings={})`|Returns an instance of the `TableFinder` class, with access to the `.edges`, `.intersections`, `.cells`, and `.tables` properties.|
 
 For example:
@@ -495,6 +505,7 @@ Many thanks to the following users who've contributed ideas, features, and fixes
 - [Ethan Corey](https://github.com/ethanscorey)
 - [Shannon Shen](https://github.com/lolipopshock)
 - [Matsumoto Toshi](https://github.com/toshi1127)
+- [John West](https://github.com/jwestwsj)
 
 ## Contributing
 

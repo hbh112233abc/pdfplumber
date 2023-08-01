@@ -15,6 +15,7 @@ from pdfminer.psparser import PSException
 from ._typing import T_num, T_obj_list
 from .container import Container
 from .page import Page
+from .repair import _repair
 from .utils import resolve_and_decode
 
 logger = logging.getLogger(__name__)
@@ -27,17 +28,20 @@ class PDF(Container):
         self,
         stream: Union[BufferedReader, BytesIO],
         stream_is_external: bool = False,
+        path: Optional[pathlib.Path] = None,
         pages: Optional[Union[List[int], Tuple[int]]] = None,
         laparams: Optional[Dict[str, Any]] = None,
-        password: str = "",
+        password: Optional[str] = None,
         strict_metadata: bool = False,
     ):
         self.stream = stream
         self.stream_is_external = stream_is_external
+        self.path = path
         self.pages_to_parse = pages
         self.laparams = None if laparams is None else LAParams(**laparams)
+        self.password = password
 
-        self.doc = PDFDocument(PDFParser(stream), password=password)
+        self.doc = PDFDocument(PDFParser(stream), password=password or "")
         self.rsrcmgr = PDFResourceManager()
         self.metadata = {}
 
@@ -63,20 +67,32 @@ class PDF(Container):
         path_or_fp: Union[str, pathlib.Path, BufferedReader, BytesIO],
         pages: Optional[Union[List[int], Tuple[int]]] = None,
         laparams: Optional[Dict[str, Any]] = None,
-        password: str = "",
+        password: Optional[str] = None,
         strict_metadata: bool = False,
+        repair: bool = False,
     ) -> "PDF":
 
-        if isinstance(path_or_fp, (str, pathlib.Path)):
-            stream: Union[BufferedReader, BytesIO] = open(path_or_fp, "rb")
+        stream: Union[BufferedReader, BytesIO]
+
+        if repair:
+            stream = _repair(path_or_fp, password=password)
             stream_is_external = False
+            # Although the original file has a path,
+            # the repaired version does not
+            path = None
+        elif isinstance(path_or_fp, (str, pathlib.Path)):
+            stream = open(path_or_fp, "rb")
+            stream_is_external = False
+            path = pathlib.Path(path_or_fp)
         else:
             stream = path_or_fp
             stream_is_external = True
+            path = None
 
         try:
             return cls(
                 stream,
+                path=path,
                 pages=pages,
                 laparams=laparams,
                 password=password,

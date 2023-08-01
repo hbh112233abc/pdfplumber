@@ -17,10 +17,14 @@ class Test(unittest.TestCase):
     def setup_class(self):
         path = os.path.join(HERE, "pdfs/nics-background-checks-2015-11.pdf")
         self.pdf = pdfplumber.open(path)
+        # via http://www.pdfill.com/example/pdf_drawing_new.pdf
+        path_2 = os.path.join(HERE, "pdfs/pdffill-demo.pdf")
+        self.pdf_2 = pdfplumber.open(path_2)
 
     @classmethod
     def teardown_class(self):
         self.pdf.close()
+        self.pdf_2.close()
 
     def test_metadata(self):
         metadata = self.pdf.metadata
@@ -38,18 +42,18 @@ class Test(unittest.TestCase):
         assert len(self.pdf.rects)
         assert len(self.pdf.lines)
         assert len(self.pdf.rect_edges)
+        assert len(self.pdf_2.curve_edges)
         # Ensure that caching is working:
         assert id(self.pdf._rect_edges) == id(self.pdf.rect_edges)
+        assert id(self.pdf_2._curve_edges) == id(self.pdf_2.curve_edges)
         assert id(self.pdf.pages[0]._layout) == id(self.pdf.pages[0].layout)
 
     def test_annots(self):
-        # via http://www.pdfill.com/example/pdf_drawing_new.pdf
-        path = os.path.join(HERE, "pdfs/pdffill-demo.pdf")
-        with pdfplumber.open(path) as pdf:
-            assert len(pdf.annots)
-            assert len(pdf.hyperlinks) == 17
-            uri = "http://www.pdfill.com/pdf_drawing.html"
-            assert pdf.hyperlinks[0]["uri"] == uri
+        pdf = self.pdf_2
+        assert len(pdf.annots)
+        assert len(pdf.hyperlinks) == 17
+        uri = "http://www.pdfill.com/pdf_drawing.html"
+        assert pdf.hyperlinks[0]["uri"] == uri
 
         path = os.path.join(HERE, "pdfs/annotations.pdf")
         with pdfplumber.open(path) as pdf:
@@ -97,6 +101,14 @@ class Test(unittest.TestCase):
         bottom.crop(
             (0.5 * float(bottom.width), 0, bottom.width, bottom.height), relative=True
         )
+
+        # An extra test for issue #914, in which relative crops were
+        # using the the wrong bboxes for cropping, leading to empty object-lists
+        crop_right = page.crop((page.width / 2, 0, page.width, page.height))
+        crop_right_again_rel = crop_right.crop(
+            (0, 0, crop_right.width / 2, page.height), relative=True
+        )
+        assert len(crop_right_again_rel.chars)
 
     def test_invalid_crops(self):
         page = self.pdf.pages[0]
@@ -146,11 +158,11 @@ class Test(unittest.TestCase):
 
     def test_colors(self):
         rect = self.pdf.pages[0].rects[0]
-        assert rect["non_stroking_color"] == [0.8, 1, 1]
+        assert rect["non_stroking_color"] == (0.8, 1, 1)
 
     def test_text_colors(self):
         char = self.pdf.pages[0].chars[3358]
-        assert char["non_stroking_color"] == [1, 0, 0]
+        assert char["non_stroking_color"] == (1, 0, 0)
 
     def test_load_with_custom_laparams(self):
         # See https://github.com/jsvine/pdfplumber/issues/168
