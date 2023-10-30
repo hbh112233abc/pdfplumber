@@ -160,6 +160,8 @@ Each object is represented as a simple Python `dict`, with the following propert
 |`bottom`| Distance of bottom of the character from top of page.|
 |`doctop`| Distance of top of character from top of document.|
 |`matrix`| The "current transformation matrix" for this character. (See below for details.)|
+|`mcid`| The [marked content](https://ghostscript.com/~robin/pdf_reference17.pdf#page=850) section ID for this character if any (otherwise `None`). *Experimental attribute.*|
+|`tag`| The [marked content](https://ghostscript.com/~robin/pdf_reference17.pdf#page=850) section tag for this character if any (otherwise `None`). *Experimental attribute.*|
 |`ncs`|TKTK|
 |`stroking_pattern`|TKTK|
 |`non_stroking_pattern`|TKTK|
@@ -193,6 +195,8 @@ my_char_rotation = my_char_ctm.skew_x
 |`linewidth`| Thickness of line.|
 |`stroking_color`|The color of the line. See [docs/colors.md](docs/colors.md) for details.|
 |`non_stroking_color`|The non-stroking color specified for the line’s path. See [docs/colors.md](docs/colors.md) for details.|
+|`mcid`| The [marked content](https://ghostscript.com/~robin/pdf_reference17.pdf#page=850) section ID for this line if any (otherwise `None`). *Experimental attribute.*|
+|`tag`| The [marked content](https://ghostscript.com/~robin/pdf_reference17.pdf#page=850) section tag for this line if any (otherwise `None`). *Experimental attribute.*|
 |`object_type`| "line"|
 
 #### `rect` properties
@@ -212,6 +216,8 @@ my_char_rotation = my_char_ctm.skew_x
 |`linewidth`| Thickness of line.|
 |`stroking_color`|The color of the rectangle's outline. See [docs/colors.md](docs/colors.md) for details.|
 |`non_stroking_color`|The rectangle’s fill color. See [docs/colors.md](docs/colors.md) for details.|
+|`mcid`| The [marked content](https://ghostscript.com/~robin/pdf_reference17.pdf#page=850) section ID for this rect if any (otherwise `None`). *Experimental attribute.*|
+|`tag`| The [marked content](https://ghostscript.com/~robin/pdf_reference17.pdf#page=850) section tag for this rect if any (otherwise `None`). *Experimental attribute.*|
 |`object_type`| "rect"|
 
 #### `curve` properties
@@ -233,6 +239,8 @@ my_char_rotation = my_char_ctm.skew_x
 |`fill`| Whether the shape defined by the curve's path is filled.|
 |`stroking_color`|The color of the curve's outline. See [docs/colors.md](docs/colors.md) for details.|
 |`non_stroking_color`|The curve’s fill color. See [docs/colors.md](docs/colors.md) for details.|
+|`mcid`| The [marked content](https://ghostscript.com/~robin/pdf_reference17.pdf#page=850) section ID for this curve if any (otherwise `None`). *Experimental attribute.*|
+|`tag`| The [marked content](https://ghostscript.com/~robin/pdf_reference17.pdf#page=850) section tag for this curve if any (otherwise `None`). *Experimental attribute.*|
 |`object_type`| "curve"|
 
 #### Derived properties
@@ -424,25 +432,52 @@ Both `vertical_strategy` and `horizontal_strategy` accept the following options:
 
 ## Extracting form values
 
-Sometimes PDF files can contain forms that include inputs that people can fill out and save. While values in form fields appear like other text in a PDF file, form data is handled differently. If you want the gory details, see page 671 of this [specification](https://www.adobe.com/content/dam/acom/en/devnet/pdf/pdf_reference_archive/pdf_reference_1-7.pdf).
+Sometimes PDF files can contain forms that include inputs that people can fill out and save. While values in form fields appear like other text in a PDF file, form data is handled differently. If you want the gory details, see page 671 of this [specification](https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/pdfreference1.7old.pdf).
 
 `pdfplumber` doesn't have an interface for working with form data, but you can access it using `pdfplumber`'s wrappers around `pdfminer`.
 
-For example, this snippet will retrieve form field names and values and store them in a dictionary. You may have to modify this script to handle cases like nested fields (see page 676 of the specification).
+For example, this snippet will retrieve form field names and values and store them in a dictionary.
 
 ```python
+import pdfplumber
+from pdfplumber.utils.pdfinternals import resolve_and_decode, resolve
+
 pdf = pdfplumber.open("document_with_form.pdf")
 
-fields = pdf.doc.catalog["AcroForm"].resolve()["Fields"]
+def parse_field_helper(form_data, field, prefix=None):
+    """ appends any PDF AcroForm field/value pairs in `field` to provided `form_data` list
 
-form_data = {}
+        if `field` has child fields, those will be parsed recursively.
+    """
+    resolved_field = field.resolve()
+    field_name = '.'.join(filter(lambda x: x, [prefix, resolve_and_decode(resolved_field.get("T"))]))
+    if "Kids" in resolved_field:
+        for kid_field in resolved_field["Kids"]:
+            parse_field_helper(form_data, kid_field, prefix=field_name)
+    if "T" in resolved_field or "TU" in resolved_field:
+        # "T" is a field-name, but it's sometimes absent.
+        # "TU" is the "alternate field name" and is often more human-readable
+        # your PDF may have one, the other, or both.
+        alternate_field_name  = resolve_and_decode(resolved_field.get("TU")) if resolved_field.get("TU") else None
+        field_value = resolve_and_decode(resolved_field["V"]) if 'V' in resolved_field else None
+        form_data.append([field_name, alternate_field_name, field_value])
 
+
+form_data = []
+fields = resolve(pdf.doc.catalog["AcroForm"])["Fields"]
 for field in fields:
-    field_name = field.resolve()["T"]
-    field_value = field.resolve()["V"]
-    form_data[field_name] = field_value
+    parse_field_helper(form_data, field)
 ```
 
+Once you run this script, `form_data` is a list containing a three-element tuple for each form element. For instance, a PDF form with a city and state field might look like this.
+```
+[
+ ['STATE.0', 'enter STATE', 'CA'],
+ ['section 2  accident infoRmation.1.0',
+  'enter city of accident',
+  'SAN FRANCISCO']
+]
+```
 
 ## Demonstrations
 
@@ -506,6 +541,8 @@ Many thanks to the following users who've contributed ideas, features, and fixes
 - [Shannon Shen](https://github.com/lolipopshock)
 - [Matsumoto Toshi](https://github.com/toshi1127)
 - [John West](https://github.com/jwestwsj)
+- [David Huggins-Daines](https://github.com/dhdaines)
+- [Jeremy B. Merrill](https://github.com/jeremybmerrill)
 
 ## Contributing
 
