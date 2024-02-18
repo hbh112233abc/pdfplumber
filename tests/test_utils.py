@@ -55,7 +55,7 @@ class Test(unittest.TestCase):
 
     def test_resolve_all(self):
         info = self.pdf.doc.xrefs[0].trailer["Info"]
-        assert type(info) == PDFObjRef
+        assert type(info) is PDFObjRef
         a = [{"info": info}]
         a_res = utils.resolve_all(a)
         assert a_res[0]["info"]["Producer"] == self.pdf.doc.info[0]["Producer"]
@@ -63,6 +63,17 @@ class Test(unittest.TestCase):
     def test_decode_psl_list(self):
         a = [PSLiteral("test"), "test_2"]
         assert utils.decode_psl_list(a) == ["test", "test_2"]
+
+    def test_x_tolerance_ratio(self):
+        pdf = pdfplumber.open(os.path.join(HERE, "pdfs/issue-987-test.pdf"))
+        page = pdf.pages[0]
+
+        assert page.extract_text() == "Big Te xt\nSmall Text"
+        assert page.extract_text(x_tolerance=4) == "Big Te xt\nSmallText"
+        assert page.extract_text(x_tolerance_ratio=0.15) == "Big Text\nSmall Text"
+
+        words = page.extract_words(x_tolerance_ratio=0.15)
+        assert "|".join(w["text"] for w in words) == "Big|Text|Small|Text"
 
     def test_extract_words(self):
         path = os.path.join(HERE, "pdfs/issue-192-example.pdf")
@@ -87,6 +98,27 @@ class Test(unittest.TestCase):
 
         assert words_rtl[1]["text"] == "baaabaaA/AAA"
         assert words_rtl[1]["direction"] == -1
+
+    def test_extra_attrs(self):
+        path = os.path.join(HERE, "pdfs/extra-attrs-example.pdf")
+        with pdfplumber.open(path) as pdf:
+            page = pdf.pages[0]
+            assert page.extract_text() == "BlackRedArial"
+            assert (
+                page.extract_text(extra_attrs=["non_stroking_color"])
+                == "Black RedArial"
+            )
+            assert page.extract_text(extra_attrs=["fontname"]) == "BlackRed Arial"
+            assert (
+                page.extract_text(extra_attrs=["non_stroking_color", "fontname"])
+                == "Black Red Arial"
+            )
+            # Should not error
+            assert page.extract_text(
+                layout=True,
+                use_text_flow=True,
+                extra_attrs=["non_stroking_color", "fontname"],
+            )
 
     def test_extract_words_punctuation(self):
         path = os.path.join(HERE, "pdfs/test-punkt.pdf")

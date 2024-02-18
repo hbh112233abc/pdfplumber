@@ -98,7 +98,7 @@ The top-level `pdfplumber.PDF` class represents a single PDF and has two main pr
 
 | Method | Description |
 |--------|-------------|
-|`.close()`| By default, `Page` objects cache their layout and object information to avoid having to reprocess it. When parsing large PDFs, however, these cached properties can require a lot of memory. You can use this method to flush the cache and release the memory. (In version `<= 0.5.25`, use `.flush_cache()`.)|
+|`.close()`| Calling this method calls `Page.close()` on each page, and also closes the file stream (except in cases when the stream is external, i.e., already opened and passed directly to `pdfplumber`). |
 
 ### The `pdfplumber.Page` class
 
@@ -119,6 +119,12 @@ The `pdfplumber.Page` class is at the core of `pdfplumber`. Most things you'll d
 |`.within_bbox(bounding_box, relative=False, strict=True)`| Similar to `.crop`, but only retains objects that fall *entirely within* the bounding box.|
 |`.outside_bbox(bounding_box, relative=False, strict=True)`| Similar to `.crop` and `.within_bbox`, but only retains objects that fall *entirely outside* the bounding box.|
 |`.filter(test_function)`| Returns a version of the page with only the `.objects` for which `test_function(obj)` returns `True`.|
+
+... and also has the following method:
+
+| Method | Description |
+|--------|-------------|
+|`.close()`| By default, `Page` objects cache their layout and object information to avoid having to reprocess it. When parsing large PDFs, however, these cached properties can require a lot of memory. You can use this method to flush the cache and release the memory.|
 
 Additional methods are described in the sections below:
 
@@ -269,6 +275,7 @@ To turn any page (including cropped pages) into an `PageImage` object, call `my_
 - `width`: The desired image width in pixels. Default: unset, determined by `resolution`. Type: `int`.
 - `height`: The desired image width in pixels. Default: unset, determined by `resolution`. Type: `int`.
 - `antialias`: Whether to use antialiasing when creating the image. Setting to `True` creates images with less-jagged text and graphics, but with larger file sizes. Default: `False`. Type: `bool`.
+- `force_mediabox`: Use the page's `.mediabox` dimensions, rather than the `.cropbox` dimensions. Default: `False`. Type: `bool`.
 
 For instance:
 
@@ -306,21 +313,9 @@ You can pass explicit coordinates or any `pdfplumber` PDF object (e.g., char, li
 
 Note: The methods above are built on Pillow's [`ImageDraw` methods](http://pillow.readthedocs.io/en/latest/reference/ImageDraw.html), but the parameters have been tweaked for consistency with SVG's `fill`/`stroke`/`stroke_width` nomenclature.
 
-### Troubleshooting ImageMagick on Debian-based systems
+### Visually debugging the table-finder
 
-If you're using `pdfplumber` on a Debian-based system and encounter a `PolicyError`, you may be able to fix it by changing the following line in `/etc/ImageMagick-6/policy.xml` from this:
-
-```xml
-<policy domain="coder" rights="none" pattern="PDF" />
-```
-
-... to this:
-
-```xml
-<policy domain="coder" rights="read|write" pattern="PDF" />
-```
-
-(More details about `policy.xml` [available here](https://imagemagick.org/script/security-policy.php).)
+`im.debug_tablefinder(table_settings={})` will return a version of the PageImage with the detected lines (in red), intersections (circles), and tables (light blue) overlaid.
 
 ## Extracting text
 
@@ -329,9 +324,9 @@ If you're using `pdfplumber` on a Debian-based system and encounter a `PolicyErr
 
 | Method | Description |
 |--------|-------------|
-|`.extract_text(x_tolerance=3, y_tolerance=3, layout=False, x_density=7.25, y_density=13, **kwargs)`| Collates all of the page's character objects into a single string.<ul><li><p>When `layout=False`: Adds spaces where the difference between the `x1` of one character and the `x0` of the next is greater than `x_tolerance`. Adds newline characters where the difference between the `doctop` of one character and the `doctop` of the next is greater than `y_tolerance`.</p></li><li><p>When `layout=True` (*experimental feature*): Attempts to mimic the structural layout of the text on the page(s), using `x_density` and `y_density` to determine the minimum number of characters/newlines per "point," the PDF unit of measurement. All remaining `**kwargs` are passed to `.extract_words(...)` (see below), the first step in calculating the layout.</p></li></ul>|
+|`.extract_text(x_tolerance=3, x_tolerance_ratio=None, y_tolerance=3, layout=False, x_density=7.25, y_density=13, **kwargs)`| Collates all of the page's character objects into a single string.<ul><li><p>When `layout=False`: Adds spaces where the difference between the `x1` of one character and the `x0` of the next is greater than `x_tolerance`. (If `x_tolerance_ratio` is not `None`, the extractor uses a dynamic `x_tolerance` equal to `x_tolerance_ratio * previous_character["size"]`.) Adds newline characters where the difference between the `doctop` of one character and the `doctop` of the next is greater than `y_tolerance`.</p></li><li><p>When `layout=True` (*experimental feature*): Attempts to mimic the structural layout of the text on the page(s), using `x_density` and `y_density` to determine the minimum number of characters/newlines per "point," the PDF unit of measurement. All remaining `**kwargs` are passed to `.extract_words(...)` (see below), the first step in calculating the layout.</p></li></ul>|
 |`.extract_text_simple(x_tolerance=3, y_tolerance=3)`| A slightly faster but less flexible version of `.extract_text(...)`, using a simpler logic.|
-|`.extract_words(x_tolerance=3, y_tolerance=3, keep_blank_chars=False, use_text_flow=False, horizontal_ltr=True, vertical_ttb=True, extra_attrs=[], split_at_punctuation=False, expand_ligatures=True)`| Returns a list of all word-looking things and their bounding boxes. Words are considered to be sequences of characters where (for "upright" characters) the difference between the `x1` of one character and the `x0` of the next is less than or equal to `x_tolerance` *and* where the `doctop` of one character and the `doctop` of the next is less than or equal to `y_tolerance`. A similar approach is taken for non-upright characters, but instead measuring the vertical, rather than horizontal, distances between them. The parameters `horizontal_ltr` and `vertical_ttb` indicate whether the words should be read from left-to-right (for horizontal words) / top-to-bottom (for vertical words). Changing `keep_blank_chars` to `True` will mean that blank characters are treated as part of a word, not as a space between words. Changing `use_text_flow` to `True` will use the PDF's underlying flow of characters as a guide for ordering and segmenting the words, rather than presorting the characters by x/y position. (This mimics how dragging a cursor highlights text in a PDF; as with that, the order does not always appear to be logical.) Passing a list of `extra_attrs`  (e.g., `["fontname", "size"]` will restrict each words to characters that share exactly the same value for each of those [attributes](#char-properties), and the resulting word dicts will indicate those attributes. Setting `split_at_punctuation` to `True` will enforce breaking tokens at punctuations specified by `string.punctuation`; or you can specify the list of separating punctuation by pass a string, e.g., <code>split_at_punctuation='!"&\'()*+,.:;<=>?@[\]^\`\{\|\}~'</code>. Unless you set `expand_ligatures=False`, ligatures such as `ﬁ` will be expanded into their constituent letters (e.g., `fi`).|
+|`.extract_words(x_tolerance=3, x_tolerance_ratio=None, y_tolerance=3, keep_blank_chars=False, use_text_flow=False, horizontal_ltr=True, vertical_ttb=True, extra_attrs=[], split_at_punctuation=False, expand_ligatures=True)`| Returns a list of all word-looking things and their bounding boxes. Words are considered to be sequences of characters where (for "upright" characters) the difference between the `x1` of one character and the `x0` of the next is less than or equal to `x_tolerance` *and* where the `doctop` of one character and the `doctop` of the next is less than or equal to `y_tolerance`. (If `x_tolerance_ratio` is not `None`, the extractor uses a dynamic `x_tolerance` equal to `x_tolerance_ratio * previous_character["size"]`.) A similar approach is taken for non-upright characters, but instead measuring the vertical, rather than horizontal, distances between them. The parameters `horizontal_ltr` and `vertical_ttb` indicate whether the words should be read from left-to-right (for horizontal words) / top-to-bottom (for vertical words). Changing `keep_blank_chars` to `True` will mean that blank characters are treated as part of a word, not as a space between words. Changing `use_text_flow` to `True` will use the PDF's underlying flow of characters as a guide for ordering and segmenting the words, rather than presorting the characters by x/y position. (This mimics how dragging a cursor highlights text in a PDF; as with that, the order does not always appear to be logical.) Passing a list of `extra_attrs`  (e.g., `["fontname", "size"]` will restrict each words to characters that share exactly the same value for each of those [attributes](#char-properties), and the resulting word dicts will indicate those attributes. Setting `split_at_punctuation` to `True` will enforce breaking tokens at punctuations specified by `string.punctuation`; or you can specify the list of separating punctuation by pass a string, e.g., <code>split_at_punctuation='!"&\'()*+,.:;<=>?@[\]^\`\{\|\}~'</code>. Unless you set `expand_ligatures=False`, ligatures such as `ﬁ` will be expanded into their constituent letters (e.g., `fi`).|
 |`.extract_text_lines(layout=False, strip=True, return_chars=True, **kwargs)`|*Experimental feature* that returns a list of dictionaries representing the lines of text on the page. The `strip` parameter works analogously to Python's `str.strip()` method, and returns `text` attributes without their surrounding whitespace. (Only relevant when `layout = True`.) Setting `return_chars` to `False` will exclude the individual character objects from the returned text-line dicts. The remaining `**kwargs` are those you would pass to `.extract_text(layout=True, ...)`.|
 |`.search(pattern, regex=True, case=True, main_group=0, return_groups=True, return_chars=True, layout=False, **kwargs)`|*Experimental feature* that allows you to search a page's text, returning a list of all instances that match the query. For each instance, the response dictionary object contains the matching text, any regex group matches, the bounding box coordinates, and the char objects themselves. `pattern` can be a compiled regular expression, an uncompiled regular expression, or a non-regex string. If `regex` is `False`, the pattern is treated as a non-regex string. If `case` is `False`, the search is performed in a case-insensitive manner. Setting `main_group` restricts the results to a specific regex group within the `pattern` (default of `0` means the entire match). Setting `return_groups` and/or `return_chars` to `False` will exclude the lists of the matched regex groups and/or characters from being added (as `"groups"` and `"chars"` to the return dicts). The `layout` parameter operates as it does for `.extract_text(...)`. The remaining `**kwargs` are those you would pass to `.extract_text(layout=True, ...)`. __Note__: Zero-width and all-whitespace matches are discarded, because they (generally) have no explicit position on the page. |
 |`.dedupe_chars(tolerance=1)`| Returns a version of the page with duplicate chars — those sharing the same text, fontname, size, and positioning (within `tolerance` x/y) as other characters — removed. (See [Issue #71](https://github.com/jsvine/pdfplumber/issues/71) to understand the motivation.)|
@@ -387,13 +382,13 @@ By default, `extract_tables` uses the page's vertical and horizontal lines (or r
     "edge_min_length": 3,
     "min_words_vertical": 3,
     "min_words_horizontal": 1,
-    "keep_blank_chars": False,
-    "text_tolerance": 3,
-    "text_x_tolerance": 3,
-    "text_y_tolerance": 3,
     "intersection_tolerance": 3,
     "intersection_x_tolerance": 3,
     "intersection_y_tolerance": 3,
+    "text_tolerance": 3,
+    "text_x_tolerance": 3,
+    "text_y_tolerance": 3,
+    "text_*": …, # See below
 }
 ```
 
@@ -403,14 +398,14 @@ By default, `extract_tables` uses the page's vertical and horizontal lines (or r
 |`"horizontal_strategy"`| Either `"lines"`, `"lines_strict"`, `"text"`, or `"explicit"`. See explanation below.|
 |`"explicit_vertical_lines"`| A list of vertical lines that explicitly demarcate cells in the table. Can be used in combination with any of the strategies above. Items in the list should be either numbers — indicating the `x` coordinate of a line the full height of the page — or `line`/`rect`/`curve` objects.|
 |`"explicit_horizontal_lines"`| A list of horizontal lines that explicitly demarcate cells in the table. Can be used in combination with any of the strategies above. Items in the list should be either numbers — indicating the `y` coordinate of a line the full height of the page — or `line`/`rect`/`curve` objects.|
-|`"snap_tolerance"`, `"snap_x_tolerance"`, `"snap_y_tolerance"`| Parallel lines within `snap_tolerance` pixels will be "snapped" to the same horizontal or vertical position.|
+|`"snap_tolerance"`, `"snap_x_tolerance"`, `"snap_y_tolerance"`| Parallel lines within `snap_tolerance` points will be "snapped" to the same horizontal or vertical position.|
 |`"join_tolerance"`, `"join_x_tolerance"`, `"join_y_tolerance"`| Line segments on the same infinite line, and whose ends are within `join_tolerance` of one another, will be "joined" into a single line segment.|
 |`"edge_min_length"`| Edges shorter than `edge_min_length` will be discarded before attempting to reconstruct the table.|
 |`"min_words_vertical"`| When using `"vertical_strategy": "text"`, at least `min_words_vertical` words must share the same alignment.|
 |`"min_words_horizontal"`| When using `"horizontal_strategy": "text"`, at least `min_words_horizontal` words must share the same alignment.|
-|`"intersection_tolerance"`, `"intersection_x_tolerance"`, `"intersection_y_tolerance"`| When combining edges into cells, orthogonal edges must be within `intersection_tolerance` pixels to be considered intersecting.|
+|`"intersection_tolerance"`, `"intersection_x_tolerance"`, `"intersection_y_tolerance"`| When combining edges into cells, orthogonal edges must be within `intersection_tolerance` points to be considered intersecting.|
 |`"text_*"`| All settings prefixed with `text_` are then used when extracting text from each discovered table. All possible arguments to `Page.extract_text(...)` are also valid here.|
-|`"text_x_tolerance"`, `"text_y_tolerance"`| These `text_`-prefixed settings *also* apply to the table-identification algorithm when the `text` strategy is used. I.e., when that algorithm searches for words, it will expect the individual letters in each word to be no more than `text_[x|y]_tolerance` pixels apart.|
+|`"text_x_tolerance"`, `"text_y_tolerance"`| These `text_`-prefixed settings *also* apply to the table-identification algorithm when the `text` strategy is used. I.e., when that algorithm searches for words, it will expect the individual letters in each word to be no more than `text_x_tolerance`/`text_y_tolerance` points apart.|
 
 ### Table-extraction strategies
 
@@ -543,6 +538,8 @@ Many thanks to the following users who've contributed ideas, features, and fixes
 - [John West](https://github.com/jwestwsj)
 - [David Huggins-Daines](https://github.com/dhdaines)
 - [Jeremy B. Merrill](https://github.com/jeremybmerrill)
+- [Echedey Luis](https://github.com/echedey-ls)
+- [Andy Friedman](https://github.com/afriedman412)
 
 ## Contributing
 
