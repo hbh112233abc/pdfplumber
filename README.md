@@ -2,11 +2,9 @@
 
 [![Version](https://img.shields.io/pypi/v/pdfplumber.svg)](https://pypi.python.org/pypi/pdfplumber) ![Tests](https://github.com/jsvine/pdfplumber/workflows/Tests/badge.svg) [![Code coverage](https://codecov.io/gh/jsvine/pdfplumber/branch/stable/graph/badge.svg)](https://codecov.io/gh/jsvine/pdfplumber/branch/stable) [![Support Python versions](https://img.shields.io/pypi/pyversions/pdfplumber.svg)](https://pypi.python.org/pypi/pdfplumber)
 
-[中文翻译](README-CN.md)
-
 Plumb a PDF for detailed information about each text character, rectangle, and line. Plus: Table extraction and visual debugging.
 
-Works best on machine-generated, rather than scanned, PDFs. Built on [`pdfminer.six`](https://github.com/goulu/pdfminer). 
+Works best on machine-generated, rather than scanned, PDFs. Built on [`pdfminer.six`](https://github.com/goulu/pdfminer).
 
 Currently [tested](tests/) on [Python 3.8, 3.9, 3.10, 3.11](.github/workflows/tests.yml).
 
@@ -251,7 +249,7 @@ my_char_rotation = my_char_ctm.skew_x
 
 #### Derived properties
 
-Additionally, both `pdfplumber.PDF` and `pdfplumber.Page` provide access to several derived lists of objects: `.rect_edges` (which decomposes each rectangle into its four lines), `.curve_edges` (which does the same for `curve` objects), and `.edges` (which combines `.rect_edges`, `.curve_edges`, and `.lines`). 
+Additionally, both `pdfplumber.PDF` and `pdfplumber.Page` provide access to several derived lists of objects: `.rect_edges` (which decomposes each rectangle into its four lines), `.curve_edges` (which does the same for `curve` objects), and `.edges` (which combines `.rect_edges`, `.curve_edges`, and `.lines`).
 
 #### `image` properties
 
@@ -339,7 +337,7 @@ Note: The methods above are built on Pillow's [`ImageDraw` methods](http://pillo
 2. Merge overlapping, or nearly-overlapping, lines.
 3. Find the intersections of all those lines.
 4. Find the most granular set of rectangles (i.e., cells) that use these intersections as their vertices.
-5. Group contiguous cells into tables. 
+5. Group contiguous cells into tables.
 
 ### Table-extraction methods
 
@@ -369,7 +367,7 @@ By default, `extract_tables` uses the page's vertical and horizontal lines (or r
 
 ```python
 {
-    "vertical_strategy": "lines", 
+    "vertical_strategy": "lines",
     "horizontal_strategy": "lines",
     "explicit_vertical_lines": [],
     "explicit_horizontal_lines": [],
@@ -411,7 +409,7 @@ By default, `extract_tables` uses the page's vertical and horizontal lines (or r
 
 Both `vertical_strategy` and `horizontal_strategy` accept the following options:
 
-| Strategy | Description | 
+| Strategy | Description |
 |----------|-------------|
 | `"lines"` | Use the page's graphical lines — including the sides of rectangle objects — as the borders of potential table-cells. |
 | `"lines_strict"` | Use the page's graphical lines — but *not* the sides of rectangle objects — as the borders of potential table-cells. |
